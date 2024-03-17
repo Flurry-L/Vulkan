@@ -568,7 +568,7 @@ public:
             // Begin the color render pass
             renderPassBeginInfo.renderPass = renderPass;
             renderPassBeginInfo.framebuffer = frameBuffers[i];
-            renderPassBeginInfo.clearValueCount = 1;
+            renderPassBeginInfo.clearValueCount = 2;
             renderPassBeginInfo.pClearValues = clearValues;
 
             vkCmdBeginRenderPass(drawCmdBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
