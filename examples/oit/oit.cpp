@@ -127,6 +127,7 @@ public:
     void prepareGeometryPass()
     {
         VkAttachmentDescription attachments[1];
+        attachments[0].flags = VK_ATTACHMENT_DESCRIPTION_MAY_ALIAS_BIT;
         attachments[0].format = depthFormat;
         attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
         attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -440,7 +441,7 @@ public:
         int result = std::system(command.c_str());
         // compile shader end
 
-        depthStencilState.back.compareOp = VK_COMPARE_OP_EQUAL;
+        depthStencilState.back.compareOp = VK_COMPARE_OP_LESS;
         depthStencilState.back.failOp = VK_STENCIL_OP_KEEP;
         depthStencilState.back.depthFailOp = VK_STENCIL_OP_KEEP;
         depthStencilState.back.passOp = VK_STENCIL_OP_KEEP;
@@ -462,6 +463,9 @@ public:
             return;
 
         VkCommandBufferBeginInfo cmdBufInfo = vks::initializers::commandBufferBeginInfo();
+
+        VkClearValue geometry_clearValues[1];
+        geometry_clearValues[0].depthStencil = {1.f, 0};
 
         VkClearValue clearValues[2];
         clearValues[0].color = defaultClearColor;
@@ -509,8 +513,10 @@ public:
             // Begin the geometry render pass
             renderPassBeginInfo.renderPass = geometryPass.renderPass;
             renderPassBeginInfo.framebuffer = geometryPass.framebuffer;
-            renderPassBeginInfo.clearValueCount = 0;
-            renderPassBeginInfo.pClearValues = nullptr;
+            //renderPassBeginInfo.clearValueCount = 1;
+            //renderPassBeginInfo.pClearValues = &clearValues[1];
+            renderPassBeginInfo.clearValueCount = 1;
+            renderPassBeginInfo.pClearValues = geometry_clearValues;
 
             vkCmdBeginRenderPass(drawCmdBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
             vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.geometry);
@@ -562,7 +568,7 @@ public:
             // Begin the color render pass
             renderPassBeginInfo.renderPass = renderPass;
             renderPassBeginInfo.framebuffer = frameBuffers[i];
-            renderPassBeginInfo.clearValueCount = 2;
+            renderPassBeginInfo.clearValueCount = 1;
             renderPassBeginInfo.pClearValues = clearValues;
 
             vkCmdBeginRenderPass(drawCmdBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
