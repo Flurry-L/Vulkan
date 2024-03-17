@@ -64,7 +64,11 @@ public:
 
     struct {
         VkPipeline geometry{ VK_NULL_HANDLE };
-        VkPipeline color{ VK_NULL_HANDLE };
+        // VkPipeline color{ VK_NULL_HANDLE };
+        VkPipeline color_128{ VK_NULL_HANDLE };
+        VkPipeline color_16{ VK_NULL_HANDLE };
+        VkPipeline color_8{ VK_NULL_HANDLE };
+        VkPipeline color_4{ VK_NULL_HANDLE };
     } pipelines;
 
     struct {
@@ -82,15 +86,25 @@ public:
         camera.setRotation(glm::vec3(0.0f, 0.0f, 0.0f));
         camera.setPerspective(60.0f, (float) width / (float) height, 0.1f, 256.0f);
         requiresStencil = true;
-        //enabledDeviceExtensions.push_back("VK_EXT_shader_stencil_export");
-        //enabledDeviceExtensions.push_back(VK_EXT_SHADER_STENCIL_EXPORT_EXTENSION_NAME);
+
+        // compile shader begin
+        std::string shaderPath = getShadersPath();
+        std::vector<std::string> shaders{"color_4.frag", "color_8.frag", "color_16.frag", "color_128.frag"};
+        for (const auto &shader : shaders) {
+            auto command = "glslc " + shaderPath + "oit/" + shader + " -o " + shaderPath + "oit/" + shader + ".spv";
+            std::system(command.c_str());
+        }
+        // compile shader end
     }
 
     ~VulkanExample()
     {
         if (device) {
             vkDestroyPipeline(device, pipelines.geometry, nullptr);
-            vkDestroyPipeline(device, pipelines.color, nullptr);
+            vkDestroyPipeline(device, pipelines.color_4, nullptr);
+            vkDestroyPipeline(device, pipelines.color_8, nullptr);
+            vkDestroyPipeline(device, pipelines.color_16, nullptr);
+            vkDestroyPipeline(device, pipelines.color_128, nullptr);
             vkDestroyPipelineLayout(device, pipelineLayouts.geometry, nullptr);
             vkDestroyPipelineLayout(device, pipelineLayouts.color, nullptr);
             vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.geometry, nullptr);
@@ -373,9 +387,21 @@ public:
         pipelineLayoutCI.pPushConstantRanges = &pushConstantRange;
         VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &pipelineLayouts.geometry));
 
-        // Create a color pipeline layout
+        // Create color pipeline layout
+
+        // stencil > 16
         pipelineLayoutCI = vks::initializers::pipelineLayoutCreateInfo(&descriptorSetLayouts.color, 1);
         VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &pipelineLayouts.color));
+        // stencil > 8
+        pipelineLayoutCI = vks::initializers::pipelineLayoutCreateInfo(&descriptorSetLayouts.color, 1);
+        VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &pipelineLayouts.color));
+        // stencil > 4
+        pipelineLayoutCI = vks::initializers::pipelineLayoutCreateInfo(&descriptorSetLayouts.color, 1);
+        VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &pipelineLayouts.color));
+        // stencil > 0
+        pipelineLayoutCI = vks::initializers::pipelineLayoutCreateInfo(&descriptorSetLayouts.color, 1);
+        VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &pipelineLayouts.color));
+
 
         // Pipelines
         VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = vks::initializers::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
@@ -416,7 +442,8 @@ public:
 
         VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.geometry));
 
-        // Create a color pipeline
+        // Create color pipeline
+        // stencil > 16
         VkPipelineColorBlendAttachmentState blendAttachmentState = vks::initializers::pipelineColorBlendAttachmentState(0xf, VK_FALSE);
         colorBlendState = vks::initializers::pipelineColorBlendStateCreateInfo(1, &blendAttachmentState);
 
@@ -435,26 +462,70 @@ public:
         pipelineCI.pStages = shaderStages.data();
         pipelineCI.pVertexInputState = &vertexInputInfo;
 
-        // compile shader begin
-        std::string shaderPath = getShadersPath();
-        std::string command = "glslc " + shaderPath + "oit/color.frag" + " -o " + shaderPath + "oit/color.frag.spv";
-        int result = std::system(command.c_str());
-        // compile shader end
-
         depthStencilState.back.compareOp = VK_COMPARE_OP_LESS;
         depthStencilState.back.failOp = VK_STENCIL_OP_KEEP;
         depthStencilState.back.depthFailOp = VK_STENCIL_OP_KEEP;
-        depthStencilState.back.passOp = VK_STENCIL_OP_KEEP;
-        depthStencilState.back.reference = 0;
+        depthStencilState.back.passOp = VK_STENCIL_OP_ZERO;
+        depthStencilState.back.reference = 16;
         depthStencilState.front = depthStencilState.back;
 
 
         shaderStages[0] = loadShader(getShadersPath() + "oit/color.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
-        shaderStages[1] = loadShader(getShadersPath() + "oit/color.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+        shaderStages[1] = loadShader(getShadersPath() + "oit/color_128.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
         rasterizationState.cullMode = VK_CULL_MODE_FRONT_BIT;
         rasterizationState.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
-        VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.color));
+        VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.color_128));
+
+        // stencil > 8
+
+        depthStencilState.back.compareOp = VK_COMPARE_OP_LESS;
+        depthStencilState.back.failOp = VK_STENCIL_OP_KEEP;
+        depthStencilState.back.depthFailOp = VK_STENCIL_OP_KEEP;
+        depthStencilState.back.passOp = VK_STENCIL_OP_ZERO;
+        depthStencilState.back.reference = 8;
+        depthStencilState.front = depthStencilState.back;
+
+        shaderStages[0] = loadShader(getShadersPath() + "oit/color.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+        shaderStages[1] = loadShader(getShadersPath() + "oit/color_16.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+        rasterizationState.cullMode = VK_CULL_MODE_FRONT_BIT;
+        rasterizationState.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+        VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.color_16));
+
+        // stencil > 4
+
+        depthStencilState.back.compareOp = VK_COMPARE_OP_LESS;
+        depthStencilState.back.failOp = VK_STENCIL_OP_KEEP;
+        depthStencilState.back.depthFailOp = VK_STENCIL_OP_KEEP;
+        depthStencilState.back.passOp = VK_STENCIL_OP_ZERO;
+        depthStencilState.back.reference = 4;
+        depthStencilState.front = depthStencilState.back;
+
+        shaderStages[0] = loadShader(getShadersPath() + "oit/color.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+        shaderStages[1] = loadShader(getShadersPath() + "oit/color_8.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+        rasterizationState.cullMode = VK_CULL_MODE_FRONT_BIT;
+        rasterizationState.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+        VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.color_8));
+
+        // stencil > 0
+
+        depthStencilState.back.compareOp = VK_COMPARE_OP_LESS;
+        depthStencilState.back.failOp = VK_STENCIL_OP_KEEP;
+        depthStencilState.back.depthFailOp = VK_STENCIL_OP_KEEP;
+        depthStencilState.back.passOp = VK_STENCIL_OP_ZERO;
+        depthStencilState.back.reference = 0;
+        depthStencilState.front = depthStencilState.back;
+
+        shaderStages[0] = loadShader(getShadersPath() + "oit/color.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+        shaderStages[1] = loadShader(getShadersPath() + "oit/color_4.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+        rasterizationState.cullMode = VK_CULL_MODE_FRONT_BIT;
+        rasterizationState.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+        VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.color_4));
+
+
     }
 
     void buildCommandBuffers() override
@@ -513,8 +584,6 @@ public:
             // Begin the geometry render pass
             renderPassBeginInfo.renderPass = geometryPass.renderPass;
             renderPassBeginInfo.framebuffer = geometryPass.framebuffer;
-            //renderPassBeginInfo.clearValueCount = 1;
-            //renderPassBeginInfo.pClearValues = &clearValues[1];
             renderPassBeginInfo.clearValueCount = 1;
             renderPassBeginInfo.pClearValues = geometry_clearValues;
 
@@ -572,8 +641,14 @@ public:
             renderPassBeginInfo.pClearValues = clearValues;
 
             vkCmdBeginRenderPass(drawCmdBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-            vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color);
             vkCmdBindDescriptorSets(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayouts.color, 0, 1, &descriptorSets.color, 0, nullptr);
+            vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_128);
+            vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+            vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_16);
+            vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+            vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_8);
+            vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+            vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_4);
             vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
             drawUI(drawCmdBuffers[i]);
             vkCmdEndRenderPass(drawCmdBuffers[i]);
