@@ -16,6 +16,8 @@
 class VulkanExample : public VulkanExampleBase
 {
 public:
+    int optimization = 0;
+    std::vector<std::string> methods{"base", "BMA", "RBS"};
     struct {
         vkglTF::Model sphere;
         vkglTF::Model cube;
@@ -63,8 +65,9 @@ public:
 
     struct {
         VkPipeline geometry{ VK_NULL_HANDLE };
-        // VkPipeline color{ VK_NULL_HANDLE };
-        VkPipeline color_128{ VK_NULL_HANDLE };
+        VkPipeline color{ VK_NULL_HANDLE };
+        VkPipeline rbs_color_128{ VK_NULL_HANDLE };
+        VkPipeline bma_color_128{ VK_NULL_HANDLE };
         VkPipeline color_32{ VK_NULL_HANDLE };
         VkPipeline color_16{ VK_NULL_HANDLE };
         VkPipeline color_8{ VK_NULL_HANDLE };
@@ -89,7 +92,7 @@ public:
 
         // compile shader begin
         std::string shaderPath = getShadersPath();
-        std::vector<std::string> shaders{"color_4.frag", "color_8.frag", "color_16.frag", "color_32.frag", "color_128.frag"};
+        std::vector<std::string> shaders{"color_4.frag", "color_8.frag", "color_16.frag", "color_32.frag", "rbs_color_128.frag", "bma_color_128.frag", "color.frag"};
         for (const auto &shader : shaders) {
             //auto command = "glslc " + shaderPath + "oit/" + shader + " -o " + shaderPath + "oit/" + shader + ".spv";
             auto command = "glslc " + shaderPath + "oit/" + shader + " -o " + shaderPath + "oit/" + shader + ".spv -O";
@@ -102,11 +105,13 @@ public:
     {
         if (device) {
             vkDestroyPipeline(device, pipelines.geometry, nullptr);
+            vkDestroyPipeline(device, pipelines.color, nullptr);
             vkDestroyPipeline(device, pipelines.color_4, nullptr);
             vkDestroyPipeline(device, pipelines.color_8, nullptr);
             vkDestroyPipeline(device, pipelines.color_16, nullptr);
             vkDestroyPipeline(device, pipelines.color_32, nullptr);
-            vkDestroyPipeline(device, pipelines.color_128, nullptr);
+            vkDestroyPipeline(device, pipelines.rbs_color_128, nullptr);
+            vkDestroyPipeline(device, pipelines.bma_color_128, nullptr);
             vkDestroyPipelineLayout(device, pipelineLayouts.geometry, nullptr);
             vkDestroyPipelineLayout(device, pipelineLayouts.color, nullptr);
             vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.geometry, nullptr);
@@ -476,12 +481,13 @@ public:
 
 
         shaderStages[0] = loadShader(getShadersPath() + "oit/color.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
-        shaderStages[1] = loadShader(getShadersPath() + "oit/color_128.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+        shaderStages[1] = loadShader(getShadersPath() + "oit/rbs_color_128.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
         rasterizationState.cullMode = VK_CULL_MODE_FRONT_BIT;
         rasterizationState.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
-        VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.color_128));
-
+        VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.rbs_color_128));
+        shaderStages[1] = loadShader(getShadersPath() + "oit/bma_color_128.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+        VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.bma_color_128));
         // stencil > 16
 
         depthStencilState.back.compareOp = VK_COMPARE_OP_LESS;
@@ -545,6 +551,22 @@ public:
         rasterizationState.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
         VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.color_4));
+
+        // baseline
+
+        depthStencilState.back.compareOp = VK_COMPARE_OP_ALWAYS;
+        depthStencilState.back.failOp = VK_STENCIL_OP_KEEP;
+        depthStencilState.back.depthFailOp = VK_STENCIL_OP_KEEP;
+        depthStencilState.back.passOp = VK_STENCIL_OP_ZERO;
+        depthStencilState.back.reference = 0;
+        depthStencilState.front = depthStencilState.back;
+
+        shaderStages[0] = loadShader(getShadersPath() + "oit/color.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+        shaderStages[1] = loadShader(getShadersPath() + "oit/color.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+        rasterizationState.cullMode = VK_CULL_MODE_FRONT_BIT;
+        rasterizationState.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+        VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.color));
 
 
     }
@@ -617,32 +639,16 @@ public:
             ObjectData objectData;
 
             vkCmdBindDescriptorSets(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayouts.geometry, 0, 1, &descriptorSets.geometry, 0, nullptr);
-            //objectData.color = glm::vec4(1.0f, 0.0f, 0.0f, 0.5f);
-            /*for (int32_t x = 0; x < 5; x++)
-            {
-                for (int32_t y = 0; y < 5; y++)
-                {
-                    for (int32_t z = 0; z < 5; z++)
-                    {
-                        glm::mat4 T = glm::translate(glm::mat4(1.0f), glm::vec3(x - 2, y - 2, z - 2));
-                        glm::mat4 S = glm::scale(glm::mat4(1.0f), glm::vec3(0.3f));
-                        objectData.model = T * S;
-                        vkCmdPushConstants(drawCmdBuffers[i], pipelineLayouts.geometry, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ObjectData), &objectData);
-                        models.sphere.draw(drawCmdBuffers[i]);
-                    }
-                }
-            }*/
 
             models.cube.bindBuffers(drawCmdBuffers[i]);
             objectData.color = glm::vec4(0.7529f, 0.7529f, 0.7529f, 0.5f);
-            //for (uint32_t x = 0; x < 2; x++)
-            //{
-                glm::mat4 T = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
-                glm::mat4 S = glm::scale(glm::mat4(1.0f), glm::vec3(2.0f));
-                objectData.model = T * S;
-                vkCmdPushConstants(drawCmdBuffers[i], pipelineLayouts.geometry, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ObjectData), &objectData);
-                models.cube.draw(drawCmdBuffers[i]);
-            //}
+
+            glm::mat4 T = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
+            glm::mat4 S = glm::scale(glm::mat4(1.0f), glm::vec3(2.0f));
+            objectData.model = T * S;
+            vkCmdPushConstants(drawCmdBuffers[i], pipelineLayouts.geometry, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ObjectData), &objectData);
+            models.cube.draw(drawCmdBuffers[i]);
+
 
             vkCmdEndRenderPass(drawCmdBuffers[i]);
 
@@ -663,16 +669,34 @@ public:
 
             vkCmdBeginRenderPass(drawCmdBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
             vkCmdBindDescriptorSets(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayouts.color, 0, 1, &descriptorSets.color, 0, nullptr);
-            vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_128);
-            vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-            vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_32);
-            vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-            vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_16);
-            vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-            vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_8);
-            vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-            vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_4);
-            vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+            // RBS
+            if (optimization == 2) {
+                vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.rbs_color_128);
+                vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_32);
+                vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_16);
+                vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_8);
+                vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_4);
+                vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+            } else if (optimization == 1) {
+                vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.bma_color_128);
+                vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_32);
+                vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_16);
+                vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_8);
+                vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_4);
+                vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+            } else {
+                vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color);
+                vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+            }
+
             drawUI(drawCmdBuffers[i]);
             vkCmdEndRenderPass(drawCmdBuffers[i]);
 
@@ -734,6 +758,16 @@ public:
         geometryPass.geometry.destroy();
         geometryPass.headIndex.destroy();
         geometryPass.linkedList.destroy();
+    }
+
+    virtual void OnUpdateUIOverlay(vks::UIOverlay *overlay)
+    {
+
+        if (overlay->header("Settings")) {
+            if (overlay->comboBox("optimization", &optimization, methods)) {
+                buildCommandBuffers();
+            }
+        }
     }
 };
 

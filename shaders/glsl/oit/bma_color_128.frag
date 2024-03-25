@@ -1,6 +1,6 @@
 #version 450
 
-#define MAX_FRAGMENT_COUNT 4
+#define MAX_FRAGMENT_COUNT 128
 
 struct Node
 {

@@ -33,17 +33,6 @@ void main()
     }
 
     // Do the insertion sort
-    /*for (uint i = 1; i < MAX_FRAGMENT_COUNT && i < count; ++i)
-    {
-        Node insert = fragments[i];
-        uint j = i;
-        while (j > 0 && insert.depth > fragments[j - 1].depth)
-        {
-            fragments[j] = fragments[j-1];
-            --j;
-        }
-        fragments[j] = insert;
-    }*/
     for (uint j = 1; j < count; ++j)
     {
         for (uint i = MAX_FRAGMENT_COUNT - 1; i > 0; --i) {
