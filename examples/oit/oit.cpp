@@ -9,6 +9,7 @@
 
 #include "vulkanexamplebase.h"
 #include "VulkanglTFModel.h"
+// #include "tiny_obj_loader.h"
 
 #define NODE_COUNT 20
 
@@ -37,8 +38,6 @@ public:
         vks::Buffer geometry;
         vks::Texture headIndex;
         vks::Buffer linkedList;
-
-        //vks::Texture countStencil;
     } geometryPass;
 
     struct RenderPassUniformData {
@@ -66,6 +65,7 @@ public:
         VkPipeline geometry{ VK_NULL_HANDLE };
         // VkPipeline color{ VK_NULL_HANDLE };
         VkPipeline color_128{ VK_NULL_HANDLE };
+        VkPipeline color_32{ VK_NULL_HANDLE };
         VkPipeline color_16{ VK_NULL_HANDLE };
         VkPipeline color_8{ VK_NULL_HANDLE };
         VkPipeline color_4{ VK_NULL_HANDLE };
@@ -89,9 +89,10 @@ public:
 
         // compile shader begin
         std::string shaderPath = getShadersPath();
-        std::vector<std::string> shaders{"color_4.frag", "color_8.frag", "color_16.frag", "color_128.frag"};
+        std::vector<std::string> shaders{"color_4.frag", "color_8.frag", "color_16.frag", "color_32.frag", "color_128.frag"};
         for (const auto &shader : shaders) {
-            auto command = "glslc " + shaderPath + "oit/" + shader + " -o " + shaderPath + "oit/" + shader + ".spv";
+            //auto command = "glslc " + shaderPath + "oit/" + shader + " -o " + shaderPath + "oit/" + shader + ".spv";
+            auto command = "glslc " + shaderPath + "oit/" + shader + " -o " + shaderPath + "oit/" + shader + ".spv -O";
             std::system(command.c_str());
         }
         // compile shader end
@@ -104,6 +105,7 @@ public:
             vkDestroyPipeline(device, pipelines.color_4, nullptr);
             vkDestroyPipeline(device, pipelines.color_8, nullptr);
             vkDestroyPipeline(device, pipelines.color_16, nullptr);
+            vkDestroyPipeline(device, pipelines.color_32, nullptr);
             vkDestroyPipeline(device, pipelines.color_128, nullptr);
             vkDestroyPipelineLayout(device, pipelineLayouts.geometry, nullptr);
             vkDestroyPipelineLayout(device, pipelineLayouts.color, nullptr);
@@ -127,8 +129,8 @@ public:
     void loadAssets()
     {
         const uint32_t glTFLoadingFlags = vkglTF::FileLoadingFlags::PreTransformVertices | vkglTF::FileLoadingFlags::FlipY;
-        models.sphere.loadFromFile(getAssetPath() + "models/sphere.gltf", vulkanDevice, queue, glTFLoadingFlags);
-        models.cube.loadFromFile(getAssetPath() + "models/cube.gltf", vulkanDevice, queue, glTFLoadingFlags);
+        //models.sphere.loadFromFile(getAssetPath() + "models/sphere.gltf", vulkanDevice, queue, glTFLoadingFlags);
+        models.cube.loadFromFile(getAssetPath() + "models/car.gltf", vulkanDevice, queue, glTFLoadingFlags);
     }
 
     void prepareUniformBuffers()
@@ -389,6 +391,9 @@ public:
 
         // Create color pipeline layout
 
+        // stencil > 32
+        pipelineLayoutCI = vks::initializers::pipelineLayoutCreateInfo(&descriptorSetLayouts.color, 1);
+        VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &pipelineLayouts.color));
         // stencil > 16
         pipelineLayoutCI = vks::initializers::pipelineLayoutCreateInfo(&descriptorSetLayouts.color, 1);
         VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &pipelineLayouts.color));
@@ -431,19 +436,19 @@ public:
         shaderStages[1] = loadShader(getShadersPath() + "oit/geometry.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
         depthStencilState.stencilTestEnable = VK_TRUE;
-        depthStencilState.back.compareOp = VK_COMPARE_OP_ALWAYS;
+        depthStencilState.back.compareOp = VK_COMPARE_OP_NOT_EQUAL;
         depthStencilState.back.failOp = VK_STENCIL_OP_INCREMENT_AND_CLAMP;
         depthStencilState.back.depthFailOp = VK_STENCIL_OP_INCREMENT_AND_CLAMP;
         depthStencilState.back.passOp = VK_STENCIL_OP_INCREMENT_AND_CLAMP;
         depthStencilState.back.compareMask = 0xff;
         depthStencilState.back.writeMask = 0xff;
-        depthStencilState.back.reference = 0;
+        depthStencilState.back.reference = 0xff;
         depthStencilState.front = depthStencilState.back;
 
         VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.geometry));
 
         // Create color pipeline
-        // stencil > 16
+        // stencil > 32
         VkPipelineColorBlendAttachmentState blendAttachmentState = vks::initializers::pipelineColorBlendAttachmentState(0xf, VK_FALSE);
         colorBlendState = vks::initializers::pipelineColorBlendStateCreateInfo(1, &blendAttachmentState);
 
@@ -466,7 +471,7 @@ public:
         depthStencilState.back.failOp = VK_STENCIL_OP_KEEP;
         depthStencilState.back.depthFailOp = VK_STENCIL_OP_KEEP;
         depthStencilState.back.passOp = VK_STENCIL_OP_ZERO;
-        depthStencilState.back.reference = 16;
+        depthStencilState.back.reference = 32;
         depthStencilState.front = depthStencilState.back;
 
 
@@ -476,6 +481,22 @@ public:
         rasterizationState.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
         VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.color_128));
+
+        // stencil > 16
+
+        depthStencilState.back.compareOp = VK_COMPARE_OP_LESS;
+        depthStencilState.back.failOp = VK_STENCIL_OP_KEEP;
+        depthStencilState.back.depthFailOp = VK_STENCIL_OP_KEEP;
+        depthStencilState.back.passOp = VK_STENCIL_OP_ZERO;
+        depthStencilState.back.reference = 16;
+        depthStencilState.front = depthStencilState.back;
+
+        shaderStages[0] = loadShader(getShadersPath() + "oit/color.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+        shaderStages[1] = loadShader(getShadersPath() + "oit/color_32.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+        rasterizationState.cullMode = VK_CULL_MODE_FRONT_BIT;
+        rasterizationState.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+        VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.color_32));
 
         // stencil > 8
 
@@ -590,14 +611,14 @@ public:
             vkCmdBeginRenderPass(drawCmdBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
             vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.geometry);
             uint32_t dynamicOffset = 0;
-            models.sphere.bindBuffers(drawCmdBuffers[i]);
+            //models.sphere.bindBuffers(drawCmdBuffers[i]);
 
             // Render the scene
             ObjectData objectData;
 
             vkCmdBindDescriptorSets(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayouts.geometry, 0, 1, &descriptorSets.geometry, 0, nullptr);
-            objectData.color = glm::vec4(1.0f, 0.0f, 0.0f, 0.5f);
-            for (int32_t x = 0; x < 5; x++)
+            //objectData.color = glm::vec4(1.0f, 0.0f, 0.0f, 0.5f);
+            /*for (int32_t x = 0; x < 5; x++)
             {
                 for (int32_t y = 0; y < 5; y++)
                 {
@@ -610,18 +631,18 @@ public:
                         models.sphere.draw(drawCmdBuffers[i]);
                     }
                 }
-            }
+            }*/
 
             models.cube.bindBuffers(drawCmdBuffers[i]);
-            objectData.color = glm::vec4(0.0f, 0.0f, 1.0f, 0.5f);
-            for (uint32_t x = 0; x < 2; x++)
-            {
-                glm::mat4 T = glm::translate(glm::mat4(1.0f), glm::vec3(3.0f * x - 1.5f, 0.0f, 0.0f));
-                glm::mat4 S = glm::scale(glm::mat4(1.0f), glm::vec3(0.2f));
+            objectData.color = glm::vec4(0.7529f, 0.7529f, 0.7529f, 0.5f);
+            //for (uint32_t x = 0; x < 2; x++)
+            //{
+                glm::mat4 T = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
+                glm::mat4 S = glm::scale(glm::mat4(1.0f), glm::vec3(2.0f));
                 objectData.model = T * S;
                 vkCmdPushConstants(drawCmdBuffers[i], pipelineLayouts.geometry, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ObjectData), &objectData);
                 models.cube.draw(drawCmdBuffers[i]);
-            }
+            //}
 
             vkCmdEndRenderPass(drawCmdBuffers[i]);
 
@@ -643,6 +664,8 @@ public:
             vkCmdBeginRenderPass(drawCmdBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
             vkCmdBindDescriptorSets(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayouts.color, 0, 1, &descriptorSets.color, 0, nullptr);
             vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_128);
+            vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+            vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_32);
             vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
             vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_16);
             vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);

@@ -33,7 +33,7 @@ void main()
     }
 
     // Do the insertion sort
-    for (uint i = 1; i < MAX_FRAGMENT_COUNT && i < count; ++i)
+    /*for (uint i = 1; i < MAX_FRAGMENT_COUNT && i < count; ++i)
     {
         Node insert = fragments[i];
         uint j = i;
@@ -43,6 +43,16 @@ void main()
             --j;
         }
         fragments[j] = insert;
+    }*/
+    for (uint j = 1; j < count; ++j)
+    {
+        for (uint i = MAX_FRAGMENT_COUNT - 1; i > 0; --i) {
+            if (i <= j && fragments[i].depth > fragments[i - 1].depth) {
+                Node temp = fragments[i];
+                fragments[i] = fragments[i - 1];
+                fragments[i - 1] = temp;
+            }
+        }
     }
 
     // Do blending

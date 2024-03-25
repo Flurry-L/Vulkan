@@ -21,6 +21,8 @@ layout (set = 0, binding = 1) buffer LinkedListSBO
 void main()
 {
     Node fragments[MAX_FRAGMENT_COUNT];
+    Node registers[32];
+    uint blockIdx[4] = {0, 32, 64, 96};
     int count = 0;
 
     uint nodeIdx = imageLoad(headIndexImage, ivec2(gl_FragCoord.xy)).r;
@@ -32,24 +34,48 @@ void main()
         ++count;
     }
 
-    // Do the insertion sort
-    for (uint i = 1; i < MAX_FRAGMENT_COUNT && i < count; ++i)
-    {
-        Node insert = fragments[i];
-        uint j = i;
-        while (j > 0 && insert.depth > fragments[j - 1].depth)
-        {
-            fragments[j] = fragments[j-1];
-            --j;
-        }
-        fragments[j] = insert;
+    uint groups = count / 32;
+    // padding
+    for (uint i = count; i < (groups + 1) * 32; ++i) {
+        fragments[i] = Node(vec4(0, 0, 0, 0), 0.f, 0);
     }
 
-    // Do blending
+    for (uint i = 0; i < groups + 1; ++i) {
+        // load from local memory
+        for (uint j = 0; j < 32; ++j) {
+            registers[j] = fragments[i * 32 + j];
+        }
+        // sort
+        for (uint j = 1; j < 32; ++j)
+        {
+            for (uint k = 31; k > 0; --k) {
+                if (k <= j && registers[k].depth > registers[k - 1].depth) {
+                    Node temp = registers[k];
+                    registers[k] = registers[k - 1];
+                    registers[k - 1] = temp;
+                }
+            }
+        }
+        // write back
+        for (uint j = 0; j < 32; ++j) {
+            fragments[i * 32 + j] = registers[j];
+        }
+    }
+
+    // merge and blending
     vec4 color = vec4(0.025, 0.025, 0.025, 1.0f);
     for (int i = 0; i < count; ++i)
     {
-        color = mix(color, fragments[i].color, fragments[i].color.a);
+        Node temp = Node(vec4(0, 0, 0, 0), 0.f, 0);
+        uint b = 0;
+        for (uint j = 0; j <= groups; ++j) {
+            if (blockIdx[j] < (j + 1) * 32 && fragments[blockIdx[j]].depth > temp.depth) {
+                b = j;
+                temp = fragments[blockIdx[j]];
+            }
+        }
+        blockIdx[b]++;
+        color = mix(color, temp.color, temp.color.a);
     }
 
     outFragColor = color;
