@@ -18,6 +18,9 @@ class VulkanExample : public VulkanExampleBase
 public:
     int optimization = 0;
     std::vector<std::string> methods{"base", "BMA", "RBS"};
+    bool animateLight = false;
+    float lightTimer = 0;
+    float lightSpeed = 0.25;
     struct {
         vkglTF::Model sphere;
         vkglTF::Model cube;
@@ -45,6 +48,7 @@ public:
     struct RenderPassUniformData {
         glm::mat4 projection;
         glm::mat4 view;
+        glm::vec4 lightPos;
     } renderPassUniformData;
     vks::Buffer renderPassUniformBuffer;
 
@@ -92,7 +96,7 @@ public:
 
         // compile shader begin
         std::string shaderPath = getShadersPath();
-        std::vector<std::string> shaders{"color_4.frag", "color_8.frag", "color_16.frag", "color_32.frag", "rbs_color_128.frag", "bma_color_128.frag", "color.frag"};
+        std::vector<std::string> shaders{"color_4.frag", "color_8.frag", "color_16.frag", "color_32.frag", "rbs_color_128.frag", "bma_color_128.frag", "color.frag", "color.vert", "geometry.frag", "geometry.vert"};
         for (const auto &shader : shaders) {
             //auto command = "glslc " + shaderPath + "oit/" + shader + " -o " + shaderPath + "oit/" + shader + ".spv";
             auto command = "glslc " + shaderPath + "oit/" + shader + " -o " + shaderPath + "oit/" + shader + ".spv -O";
@@ -141,8 +145,9 @@ public:
     void prepareUniformBuffers()
     {
         // Create an uniform buffer for a render pass.
-        VK_CHECK_RESULT(vulkanDevice->createBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &renderPassUniformBuffer, sizeof(RenderPassUniformData)));
-        VK_CHECK_RESULT(renderPassUniformBuffer.map());
+        VK_CHECK_RESULT(vulkanDevice->createBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &renderPassUniformBuffer, sizeof(RenderPassUniformData), &renderPassUniformBuffer));
+        //VK_CHECK_RESULT(renderPassUniformBuffer.map());
+        updateUniformBuffers();
     }
 
     void prepareGeometryPass()
@@ -434,7 +439,8 @@ public:
         pipelineCI.pDynamicState = &dynamicState;
         pipelineCI.stageCount = static_cast<uint32_t>(shaderStages.size());
         pipelineCI.pStages = shaderStages.data();
-        pipelineCI.pVertexInputState = vkglTF::Vertex::getPipelineVertexInputState({ vkglTF::VertexComponent::Position });
+        //pipelineCI.pVertexInputState = vkglTF::Vertex::getPipelineVertexInputState({ vkglTF::VertexComponent::Position });
+        pipelineCI.pVertexInputState = vkglTF::Vertex::getPipelineVertexInputState({ vkglTF::VertexComponent::Position, vkglTF::VertexComponent::Normal });
 
         // Create a geometry pipeline
         shaderStages[0] = loadShader(getShadersPath() + "oit/geometry.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
@@ -708,7 +714,17 @@ public:
     {
         renderPassUniformData.projection = camera.matrices.perspective;
         renderPassUniformData.view = camera.matrices.view;
+
+        // light source
+        if (animateLight) {
+            lightTimer += frameTimer * lightSpeed;
+            renderPassUniformData.lightPos.x = sin(glm::radians(lightTimer * 360.f)) * 15.0f;
+            renderPassUniformData.lightPos.y = cos(glm::radians(lightTimer * 360.f)) * 15.0f;
+        }
+
+        VK_CHECK_RESULT(renderPassUniformBuffer.map());
         memcpy(renderPassUniformBuffer.mapped, &renderPassUniformData, sizeof(RenderPassUniformData));
+        renderPassUniformBuffer.unmap();
     }
 
     void prepare() override
@@ -720,7 +736,7 @@ public:
         setupDescriptors();
         preparePipelines();
         buildCommandBuffers();
-        updateUniformBuffers();
+        //updateUniformBuffers();
         prepared = true;
     }
 
@@ -762,12 +778,14 @@ public:
 
     virtual void OnUpdateUIOverlay(vks::UIOverlay *overlay)
     {
-
         if (overlay->header("Settings")) {
             if (overlay->comboBox("optimization", &optimization, methods)) {
                 buildCommandBuffers();
             }
+            overlay->checkBox("Animate light", &animateLight);
+            overlay->sliderFloat("Light speed", &lightSpeed, 0.1f, 1.0f);
         }
+
     }
 };
 
