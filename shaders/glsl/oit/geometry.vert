@@ -23,8 +23,8 @@ void main()
 {
     mat4 PVM = renderPassUBO.projection * renderPassUBO.view * pushConsts.model;
     gl_Position = PVM * vec4(inPos, 1.0);
-    vec4 pos = pushConsts.model * vec4(inPos, 1.0);
-    outNormal = mat3(pushConsts.model) * inNormal;
+    vec4 pos = renderPassUBO.view * pushConsts.model * vec4(inPos, 1.0);
+    outNormal = mat3(renderPassUBO.view) * mat3(pushConsts.model) * inNormal;
     vec3 lPos = mat3(pushConsts.model) * renderPassUBO.lightPos.xyz;
     outLightVec = lPos - pos.xyz;
     outViewVec = -pos.xyz;
