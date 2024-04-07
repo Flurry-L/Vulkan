@@ -13,13 +13,18 @@
 
 #define NODE_COUNT 20
 
+struct UISettings {
+    int oitAlgorithm = 0;
+    int optimization = 0;
+    bool animateLight = false;
+    float lightSpeed = 0.25f;
+    float lightTimer = 0.0f;
+} uiSettings;
+
 class VulkanExample : public VulkanExampleBase {
 public:
-    int optimization = 0;
     std::vector<std::string> methods{"base", "BMA", "RBS"};
-    bool animateLight = false;
-    float lightTimer = 0;
-    float lightSpeed = 0.25;
+    std::vector<std::string> oit_alg{"linked list", "kbuffer"};
     struct {
         vkglTF::Model sphere;
         vkglTF::Model cube;
@@ -41,13 +46,14 @@ public:
         VkFramebuffer framebuffer{VK_NULL_HANDLE};
         vks::Buffer geometry;
         vks::Texture headIndex;
-        vks::Buffer linkedList;
+        vks::Buffer abuffer;
     } geometryPass;
 
     struct RenderPassUniformData {
         glm::mat4 projection;
         glm::mat4 view;
         glm::vec4 lightPos;
+        glm::ivec3 viewport; // (width, height, width * height)
     } renderPassUniformData;
     vks::Buffer renderPassUniformBuffer;
 
@@ -68,6 +74,8 @@ public:
 
     struct {
         VkPipeline geometry{VK_NULL_HANDLE};
+        VkPipeline loop64{VK_NULL_HANDLE};
+        VkPipeline kbuf_blend{VK_NULL_HANDLE};
         VkPipeline color{VK_NULL_HANDLE};
         VkPipeline rbs_color_128{VK_NULL_HANDLE};
         VkPipeline bma_color_128{VK_NULL_HANDLE};
@@ -96,7 +104,8 @@ public:
         std::string shaderPath = getShadersPath();
         std::vector<std::string> shaders{"color_4.frag", "color_8.frag", "color_16.frag", "color_32.frag",
                                          "rbs_color_128.frag", "bma_color_128.frag", "color.frag", "color.vert",
-                                         "geometry.frag", "geometry.vert"};
+                                         "geometry.frag", "geometry.vert", "loop64.vert", "loop64.frag", "kbuf_blend.frag",
+                                         "kbuf_blend.vert"};
         for (const auto &shader: shaders) {
             //auto command = "glslc " + shaderPath + "oit/" + shader + " -o " + shaderPath + "oit/" + shader + ".spv";
             auto command = "glslc " + shaderPath + "oit/" + shader + " -o " + shaderPath + "oit/" + shader + ".spv -O";
@@ -108,6 +117,8 @@ public:
     ~VulkanExample() {
         if (device) {
             vkDestroyPipeline(device, pipelines.geometry, nullptr);
+            vkDestroyPipeline(device, pipelines.loop64, nullptr);
+            vkDestroyPipeline(device, pipelines.kbuf_blend, nullptr);
             vkDestroyPipeline(device, pipelines.color, nullptr);
             vkDestroyPipeline(device, pipelines.color_4, nullptr);
             vkDestroyPipeline(device, pipelines.color_8, nullptr);
@@ -286,7 +297,7 @@ public:
         VK_CHECK_RESULT(vulkanDevice->createBuffer(
                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                &geometryPass.linkedList,
+                &geometryPass.abuffer,
                 sizeof(Node) * geometrySBO.maxNodeCount));
 
         // Change HeadIndex image's layout from UNDEFINED to GENERAL
@@ -325,7 +336,7 @@ public:
     void setupDescriptors() {
         // Pool
         std::vector<VkDescriptorPoolSize> poolSizes = {
-                vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1),
+                vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2),
                 vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1),
                 vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3),
                 vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2),
@@ -364,6 +375,10 @@ public:
                 // LinkedListSBO
                 vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                                                               VK_SHADER_STAGE_FRAGMENT_BIT, 1),
+                // renderPassUniformData
+                vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                                                              VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                                              2),
         };
         descriptorLayoutCI = vks::initializers::descriptorSetLayoutCreateInfo(setLayoutBindings);
         VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &descriptorLayoutCI, nullptr, &descriptorSetLayouts.color));
@@ -389,7 +404,7 @@ public:
                                                       &geometryPass.headIndex.descriptor),
                 // Binding 4: LinkedListSBO
                 vks::initializers::writeDescriptorSet(descriptorSets.geometry, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3,
-                                                      &geometryPass.linkedList.descriptor)
+                                                      &geometryPass.abuffer.descriptor)
         };
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0,
                                nullptr);
@@ -404,7 +419,10 @@ public:
                                                       &geometryPass.headIndex.descriptor),
                 // Binding 1: LinkedListSBO
                 vks::initializers::writeDescriptorSet(descriptorSets.color, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1,
-                                                      &geometryPass.linkedList.descriptor)
+                                                      &geometryPass.abuffer.descriptor),
+                // Binding 2: renderPassUniformData
+                vks::initializers::writeDescriptorSet(descriptorSets.color, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2,
+                                                      &renderPassUniformBuffer.descriptor),
         };
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0,
                                nullptr);
@@ -489,6 +507,11 @@ public:
         depthStencilState.front = depthStencilState.back;
 
         VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.geometry));
+
+        //  loop64
+        shaderStages[0] = loadShader(getShadersPath() + "oit/loop64.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+        shaderStages[1] = loadShader(getShadersPath() + "oit/loop64.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+        VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.loop64));
 
         // Create color pipeline
         // stencil > 32
@@ -609,6 +632,14 @@ public:
 
         VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.color));
 
+        // kbuf
+        shaderStages[0] = loadShader(getShadersPath() + "oit/kbuf_blend.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+        shaderStages[1] = loadShader(getShadersPath() + "oit/kbuf_blend.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+        rasterizationState.cullMode = VK_CULL_MODE_FRONT_BIT;
+        rasterizationState.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+        VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.kbuf_blend));
+
 
     }
 
@@ -672,7 +703,19 @@ public:
             renderPassBeginInfo.pClearValues = geometry_clearValues;
 
             vkCmdBeginRenderPass(drawCmdBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-            vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.geometry);
+            if (uiSettings.oitAlgorithm == 0) {
+                vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.geometry);
+            } else if (uiSettings.oitAlgorithm == 1) {
+                uint32_t data = 0xFFFFFFFF;  // 32-bit value with all bits set to 1
+                vkCmdFillBuffer(drawCmdBuffers[i], geometryPass.abuffer.buffer, 0, geometryPass.abuffer.size, data);
+
+                /*void* abuf_data = malloc(sizeof(Node) * geometrySBO.maxNodeCount);
+                memset(abuf_data, 0xff, sizeof(Node) * geometrySBO.maxNodeCount);
+                VK_CHECK_RESULT(geometryPass.abuffer.map());
+                memcpy(geometryPass.abuffer.mapped, abuf_data, geometryPass.abuffer.size);
+                geometryPass.abuffer.unmap();*/
+                vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.loop64);
+            }
             uint32_t dynamicOffset = 0;
             //models.sphere.bindBuffers(drawCmdBuffers[i]);
 
@@ -716,33 +759,39 @@ public:
             vkCmdBeginRenderPass(drawCmdBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
             vkCmdBindDescriptorSets(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayouts.color, 0, 1,
                                     &descriptorSets.color, 0, nullptr);
-            // RBS
-            if (optimization == 2) {
-                vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.rbs_color_128);
-                vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-                vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_32);
-                vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-                vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_16);
-                vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-                vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_8);
-                vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-                vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_4);
-                vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-            } else if (optimization == 1) {
-                vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.bma_color_128);
-                vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-                vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_32);
-                vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-                vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_16);
-                vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-                vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_8);
-                vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-                vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_4);
-                vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-            } else {
-                vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color);
+            if (uiSettings.oitAlgorithm == 0) {
+                // RBS
+                if (uiSettings.optimization == 2) {
+                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.rbs_color_128);
+                    vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_32);
+                    vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_16);
+                    vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_8);
+                    vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_4);
+                    vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                } else if (uiSettings.optimization == 1) {
+                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.bma_color_128);
+                    vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_32);
+                    vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_16);
+                    vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_8);
+                    vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_4);
+                    vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                } else {
+                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color);
+                    vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                }
+            } else if (uiSettings.oitAlgorithm == 1) {
+                vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.kbuf_blend);
                 vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
             }
+
 
             drawUI(drawCmdBuffers[i]);
             vkCmdEndRenderPass(drawCmdBuffers[i]);
@@ -754,17 +803,19 @@ public:
     void updateUniformBuffers() {
         renderPassUniformData.projection = camera.matrices.perspective;
         renderPassUniformData.view = camera.matrices.view;
+        renderPassUniformData.viewport = glm::ivec3(width, height, width * height);
 
         // light source
-        if (animateLight) {
-            lightTimer += frameTimer * lightSpeed;
-            renderPassUniformData.lightPos.x = sin(glm::radians(lightTimer * 360.f)) * 15.0f;
-            renderPassUniformData.lightPos.y = cos(glm::radians(lightTimer * 360.f)) * 15.0f;
+        if (uiSettings.animateLight) {
+            uiSettings.lightTimer += frameTimer * uiSettings.lightSpeed;
+            renderPassUniformData.lightPos.x = sin(glm::radians(uiSettings.lightTimer * 360.f)) * 15.0f;
+            renderPassUniformData.lightPos.y = cos(glm::radians(uiSettings.lightTimer * 360.f)) * 15.0f;
         }
 
         VK_CHECK_RESULT(renderPassUniformBuffer.map());
         memcpy(renderPassUniformBuffer.mapped, &renderPassUniformData, sizeof(RenderPassUniformData));
         renderPassUniformBuffer.unmap();
+
     }
 
     void prepare() override {
@@ -808,18 +859,24 @@ public:
         vkDestroyFramebuffer(device, geometryPass.framebuffer, nullptr);
         geometryPass.geometry.destroy();
         geometryPass.headIndex.destroy();
-        geometryPass.linkedList.destroy();
+        geometryPass.abuffer.destroy();
     }
 
     virtual void OnUpdateUIOverlay(vks::UIOverlay *overlay) {
         if (overlay->header("Settings")) {
-            if (overlay->comboBox("optimization", &optimization, methods)) {
+            if (overlay->comboBox("Oit algorithm", &uiSettings.oitAlgorithm, oit_alg)) {
                 buildCommandBuffers();
             }
-            overlay->checkBox("Animate light", &animateLight);
-            overlay->sliderFloat("Light speed", &lightSpeed, 0.1f, 1.0f);
-        }
 
+            if (uiSettings.oitAlgorithm == 0) {
+                if (overlay->comboBox("optimization", &uiSettings.optimization, methods)) {
+                    buildCommandBuffers();
+                }
+            }
+
+            overlay->checkBox("Animate light", &uiSettings.animateLight);
+            overlay->sliderFloat("Light speed", &uiSettings.lightSpeed, 0.1f, 1.0f);
+        }
     }
 };
 

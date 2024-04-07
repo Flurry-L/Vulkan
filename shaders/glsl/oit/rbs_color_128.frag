@@ -63,7 +63,7 @@ void main()
     }
 
     // merge and blending
-    vec4 color = vec4(0.025, 0.025, 0.025, 1.0f);
+    vec4 color = vec4(0.7529f, 0.7529f, 0.7529f, 1.f);
     for (int i = 0; i < count; ++i)
     {
         Node temp = Node(vec4(0, 0, 0, 0), 0.f, 0);

@@ -46,19 +46,15 @@ void main()
         vec3 L = normalize(inLightVec);
         vec3 V = normalize(inViewVec);
         vec3 R = reflect(-L, N);
-        // 漫反射部分
         float diffuse = max(dot(N, L), 0.0);
-        // 镜面反射部分
-        float shininess = 100.f; // 高光的聚焦程度，较高的值会产生更小更亮的高光
-        vec3 specular = pow(max(dot(R, V), 0.0), shininess) * vec3(1.0); // 白色高光
-        // 环境光照部分
-        vec3 ambient = vec3(0.1); // 较低的环境光照，模拟间接光照
-        // 合并漫反射、镜面反射和环境光照
-        vec3 lightColor = vec3(1.f);
-        vec3 finalColor = (diffuse * pushConsts.color.xyz + specular) * lightColor + ambient;
-
-        nodes[nodeIdx].color = vec4(finalColor, 1.0);
-        nodes[nodeIdx].color = vec4(diffuse * pushConsts.color.xyz + specular, pushConsts.color.a);
+        float shininess = 32.f;
+        float specular = pow(max(dot(R, V), 0.0), shininess);
+        float ambient = 0.2f;
+        float cos = max(dot(N, L), 0.0);
+        vec3 finalColor = (ambient + diffuse + specular) * pushConsts.color.xyz;
+        //vec3 finalColor = (ambient + cos) * pushConsts.color.xyz;
+        nodes[nodeIdx].color = vec4(finalColor, pushConsts.color.a);
+        //nodes[nodeIdx].color = vec4(N, 1);
         nodes[nodeIdx].depth = gl_FragCoord.z;
         nodes[nodeIdx].next = prevHeadIdx;
     }
