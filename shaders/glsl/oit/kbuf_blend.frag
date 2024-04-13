@@ -3,7 +3,7 @@
 #extension GL_NV_shader_atomic_int64 : require
 
 #include "shaderCommon.glsl"
-#define OIT_LAYERS 20
+#define OIT_LAYERS 8
 
 layout (location = 0) out vec4 outFragColor;
 

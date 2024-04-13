@@ -17,14 +17,15 @@ struct UISettings {
     int oitAlgorithm = 0;
     int optimization = 0;
     bool animateLight = false;
+    bool onlyOpt32 = false;
     float lightSpeed = 0.25f;
     float lightTimer = 0.0f;
 } uiSettings;
 
 class VulkanExample : public VulkanExampleBase {
 public:
-    std::vector<std::string> methods{"base", "BMA", "RBS"};
-    std::vector<std::string> oit_alg{"linked list", "kbuffer"};
+    std::vector<std::string> methods{"base", "BMA", "RBS", "Bitonic"};
+    std::vector<std::string> oit_alg{"linked list", "atomic loop"};
     struct {
         vkglTF::Model sphere;
         vkglTF::Model cube;
@@ -83,6 +84,8 @@ public:
         VkPipeline color_16{VK_NULL_HANDLE};
         VkPipeline color_8{VK_NULL_HANDLE};
         VkPipeline color_4{VK_NULL_HANDLE};
+        VkPipeline base_color_32{VK_NULL_HANDLE};
+        VkPipeline bitonic_color{VK_NULL_HANDLE};
     } pipelines;
 
     struct {
@@ -105,7 +108,7 @@ public:
         std::vector<std::string> shaders{"color_4.frag", "color_8.frag", "color_16.frag", "color_32.frag",
                                          "rbs_color_128.frag", "bma_color_128.frag", "color.frag", "color.vert",
                                          "geometry.frag", "geometry.vert", "loop64.vert", "loop64.frag", "kbuf_blend.frag",
-                                         "kbuf_blend.vert"};
+                                         "kbuf_blend.vert", "base_color_32.frag", "bitonic.frag"};
         for (const auto &shader: shaders) {
             //auto command = "glslc " + shaderPath + "oit/" + shader + " -o " + shaderPath + "oit/" + shader + ".spv";
             auto command = "glslc " + shaderPath + "oit/" + shader + " -o " + shaderPath + "oit/" + shader + ".spv -O";
@@ -120,12 +123,14 @@ public:
             vkDestroyPipeline(device, pipelines.loop64, nullptr);
             vkDestroyPipeline(device, pipelines.kbuf_blend, nullptr);
             vkDestroyPipeline(device, pipelines.color, nullptr);
+            vkDestroyPipeline(device, pipelines.bitonic_color, nullptr);
             vkDestroyPipeline(device, pipelines.color_4, nullptr);
             vkDestroyPipeline(device, pipelines.color_8, nullptr);
             vkDestroyPipeline(device, pipelines.color_16, nullptr);
             vkDestroyPipeline(device, pipelines.color_32, nullptr);
             vkDestroyPipeline(device, pipelines.rbs_color_128, nullptr);
             vkDestroyPipeline(device, pipelines.bma_color_128, nullptr);
+            vkDestroyPipeline(device, pipelines.base_color_32, nullptr);
             vkDestroyPipelineLayout(device, pipelineLayouts.geometry, nullptr);
             vkDestroyPipelineLayout(device, pipelineLayouts.color, nullptr);
             vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.geometry, nullptr);
@@ -616,6 +621,11 @@ public:
 
         VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.color_4));
 
+        // base 32
+        shaderStages[0] = loadShader(getShadersPath() + "oit/color.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+        shaderStages[1] = loadShader(getShadersPath() + "oit/base_color_32.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+        VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.base_color_32));
+
         // baseline
 
         depthStencilState.back.compareOp = VK_COMPARE_OP_ALWAYS;
@@ -631,6 +641,11 @@ public:
         rasterizationState.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
         VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.color));
+
+        // bitonic
+        shaderStages[0] = loadShader(getShadersPath() + "oit/color.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+        shaderStages[1] = loadShader(getShadersPath() + "oit/bitonic.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+        VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.bitonic_color));
 
         // kbuf
         shaderStages[0] = loadShader(getShadersPath() + "oit/kbuf_blend.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
@@ -760,29 +775,49 @@ public:
             vkCmdBindDescriptorSets(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayouts.color, 0, 1,
                                     &descriptorSets.color, 0, nullptr);
             if (uiSettings.oitAlgorithm == 0) {
-                // RBS
-                if (uiSettings.optimization == 2) {
-                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.rbs_color_128);
+                if (uiSettings.optimization == 3) {
+                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.bitonic_color);
                     vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_32);
-                    vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_16);
-                    vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_8);
-                    vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_4);
-                    vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                }
+                else if (uiSettings.optimization == 2) {
+                    if (uiSettings.onlyOpt32) {
+                        vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.rbs_color_128);
+                        vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                        vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.base_color_32);
+                        vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                    }
+                    else {
+                        vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.rbs_color_128);
+                        vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                        vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_32);
+                        vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                        vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_16);
+                        vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                        vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_8);
+                        vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                        vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_4);
+                        vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                    }
+
                 } else if (uiSettings.optimization == 1) {
-                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.bma_color_128);
-                    vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_32);
-                    vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_16);
-                    vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_8);
-                    vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_4);
-                    vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                    if (uiSettings.onlyOpt32) {
+                        vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.bma_color_128);
+                        vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                        vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.base_color_32);
+                        vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                    } else {
+                        vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.bma_color_128);
+                        vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                        vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_32);
+                        vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                        vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_16);
+                        vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                        vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_8);
+                        vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                        vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_4);
+                        vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                    }
+
                 } else {
                     vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color);
                     vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
@@ -791,8 +826,6 @@ public:
                 vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.kbuf_blend);
                 vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
             }
-
-
             drawUI(drawCmdBuffers[i]);
             vkCmdEndRenderPass(drawCmdBuffers[i]);
 
@@ -873,7 +906,9 @@ public:
                     buildCommandBuffers();
                 }
             }
-
+            if (overlay->checkBox("Only optimize 32+", &uiSettings.onlyOpt32)) {
+                buildCommandBuffers();
+            }
             overlay->checkBox("Animate light", &uiSettings.animateLight);
             overlay->sliderFloat("Light speed", &uiSettings.lightSpeed, 0.1f, 1.0f);
         }

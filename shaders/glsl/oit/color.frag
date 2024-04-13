@@ -47,7 +47,7 @@ void main()
 
     // Do blending
     if (count != 0) {
-        vec4 color = vec4(0.7529f, 0.7529f, 0.7529f, 1.f);
+        vec4 color = vec4(0);
         for (int i = 0; i < count; ++i)
         {
             color = mix(color, fragments[i].color, fragments[i].color.a);

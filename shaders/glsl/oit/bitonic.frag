@@ -1,8 +1,8 @@
 #version 450
 #define MAX_FRAGMENT_COUNT 128
-
-#include "shaderCommon.glsl"
-
+#include "bitonic_func.frag"
+#extension GL_ARB_gpu_shader_int64 : require
+#extension GL_NV_shader_atomic_int64 : require
 struct Node
 {
     vec4 color;
@@ -21,6 +21,7 @@ layout (set = 0, binding = 1) buffer LinkedListSBO
 
 void main()
 {
+    //Node fragments[MAX_FRAGMENT_COUNT];
     Node fragments;
     uint64_t frag[MAX_FRAGMENT_COUNT];
     uint64_t registers[32];
@@ -49,15 +50,21 @@ void main()
             registers[j] = frag[i * 32 + j];
         }
         // sort
-        for (uint j = 0; j < 31; ++j) {
-            for (uint k = 31; k > j; --k) {
-                if (registers[k] < registers[k - 1]) {
-                    uint64_t temp = registers[k];
-                    registers[k] = registers[k - 1];
-                    registers[k - 1] = temp;
-                }
-            }
-        }
+        line(registers);
+        triangle4(registers);
+        line(registers);
+        triangle8(registers);
+        rhombus4(registers);
+        line(registers);
+        triangle16(registers);
+        rhombus8(registers);
+        rhombus4(registers);
+        line(registers);
+        triangle32(registers);
+        rhombus16(registers);
+        rhombus8(registers);
+        rhombus4(registers);
+        line(registers);
         // write back
         for (uint j = 0; j < 32; ++j) {
             frag[i * 32 + j] = registers[j];
@@ -83,7 +90,6 @@ void main()
         } else {
             break;
         }
-
     }
     outFragColor = color;
 }
