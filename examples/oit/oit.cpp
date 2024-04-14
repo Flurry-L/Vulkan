@@ -24,7 +24,7 @@ struct UISettings {
 
 class VulkanExample : public VulkanExampleBase {
 public:
-    std::vector<std::string> methods{"base", "BMA", "RBS", "Bitonic"};
+    std::vector<std::string> methods{"base", "BMA", "RBS", "iRBS"};
     std::vector<std::string> oit_alg{"linked list", "atomic loop"};
     struct {
         vkglTF::Model sphere;
@@ -107,7 +107,8 @@ public:
         std::string shaderPath = getShadersPath();
         std::vector<std::string> shaders{"color_4.frag", "color_8.frag", "color_16.frag", "color_32.frag",
                                          "rbs_color_128.frag", "bma_color_128.frag", "color.frag", "color.vert",
-                                         "geometry.frag", "geometry.vert", "loop64.vert", "loop64.frag", "kbuf_blend.frag",
+                                         "geometry.frag", "geometry.vert", "loop64.vert", "loop64.frag",
+                                         "kbuf_blend.frag",
                                          "kbuf_blend.vert", "base_color_32.frag", "bitonic.frag"};
         for (const auto &shader: shaders) {
             //auto command = "glslc " + shaderPath + "oit/" + shader + " -o " + shaderPath + "oit/" + shader + ".spv";
@@ -153,7 +154,6 @@ public:
     void loadAssets() {
         const uint32_t glTFLoadingFlags =
                 vkglTF::FileLoadingFlags::PreTransformVertices | vkglTF::FileLoadingFlags::FlipY;
-        //models.sphere.loadFromFile(getAssetPath() + "models/sphere.gltf", vulkanDevice, queue, glTFLoadingFlags);
         models.cube.loadFromFile(getAssetPath() + "models/car.gltf", vulkanDevice, queue, glTFLoadingFlags);
     }
 
@@ -163,7 +163,6 @@ public:
                                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &renderPassUniformBuffer,
                                                    sizeof(RenderPassUniformData), &renderPassUniformBuffer));
-        //VK_CHECK_RESULT(renderPassUniformBuffer.map());
         updateUniformBuffers();
     }
 
@@ -187,7 +186,6 @@ public:
         VkSubpassDescription subpassDescription = {};
         subpassDescription.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         subpassDescription.pDepthStencilAttachment = &depthStencilAttachmentRef;
-        // Geometry render pass doesn't need any output attachment.
         VkRenderPassCreateInfo renderPassInfo = vks::initializers::renderPassCreateInfo();
         renderPassInfo.attachmentCount = 1;
         renderPassInfo.pAttachments = attachments;
@@ -199,7 +197,6 @@ public:
 
         VkImageView v_attachments[1];
         v_attachments[0] = depthStencil.view;
-        // Geometry frame buffer doesn't need any output attachment.
         VkFramebufferCreateInfo fbufCreateInfo = vks::initializers::framebufferCreateInfo();
         fbufCreateInfo.renderPass = geometryPass.renderPass;
         fbufCreateInfo.attachmentCount = 1;
@@ -493,7 +490,6 @@ public:
         pipelineCI.pDynamicState = &dynamicState;
         pipelineCI.stageCount = static_cast<uint32_t>(shaderStages.size());
         pipelineCI.pStages = shaderStages.data();
-        //pipelineCI.pVertexInputState = vkglTF::Vertex::getPipelineVertexInputState({ vkglTF::VertexComponent::Position });
         pipelineCI.pVertexInputState = vkglTF::Vertex::getPipelineVertexInputState(
                 {vkglTF::VertexComponent::Position, vkglTF::VertexComponent::Normal});
 
@@ -557,6 +553,12 @@ public:
         shaderStages[1] = loadShader(getShadersPath() + "oit/bma_color_128.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
         VK_CHECK_RESULT(
                 vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.bma_color_128));
+
+        // bitonic
+        shaderStages[1] = loadShader(getShadersPath() + "oit/bitonic.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+        VK_CHECK_RESULT(
+                vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.bitonic_color));
+
         // stencil > 16
 
         depthStencilState.back.compareOp = VK_COMPARE_OP_LESS;
@@ -566,7 +568,6 @@ public:
         depthStencilState.back.reference = 16;
         depthStencilState.front = depthStencilState.back;
 
-        shaderStages[0] = loadShader(getShadersPath() + "oit/color.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
         shaderStages[1] = loadShader(getShadersPath() + "oit/color_32.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
         rasterizationState.cullMode = VK_CULL_MODE_FRONT_BIT;
         rasterizationState.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
@@ -582,7 +583,6 @@ public:
         depthStencilState.back.reference = 8;
         depthStencilState.front = depthStencilState.back;
 
-        shaderStages[0] = loadShader(getShadersPath() + "oit/color.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
         shaderStages[1] = loadShader(getShadersPath() + "oit/color_16.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
         rasterizationState.cullMode = VK_CULL_MODE_FRONT_BIT;
         rasterizationState.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
@@ -598,7 +598,6 @@ public:
         depthStencilState.back.reference = 4;
         depthStencilState.front = depthStencilState.back;
 
-        shaderStages[0] = loadShader(getShadersPath() + "oit/color.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
         shaderStages[1] = loadShader(getShadersPath() + "oit/color_8.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
         rasterizationState.cullMode = VK_CULL_MODE_FRONT_BIT;
         rasterizationState.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
@@ -614,7 +613,6 @@ public:
         depthStencilState.back.reference = 0;
         depthStencilState.front = depthStencilState.back;
 
-        shaderStages[0] = loadShader(getShadersPath() + "oit/color.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
         shaderStages[1] = loadShader(getShadersPath() + "oit/color_4.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
         rasterizationState.cullMode = VK_CULL_MODE_FRONT_BIT;
         rasterizationState.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
@@ -622,9 +620,9 @@ public:
         VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.color_4));
 
         // base 32
-        shaderStages[0] = loadShader(getShadersPath() + "oit/color.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
         shaderStages[1] = loadShader(getShadersPath() + "oit/base_color_32.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
-        VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.base_color_32));
+        VK_CHECK_RESULT(
+                vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.base_color_32));
 
         // baseline
 
@@ -635,17 +633,12 @@ public:
         depthStencilState.back.reference = 0;
         depthStencilState.front = depthStencilState.back;
 
-        shaderStages[0] = loadShader(getShadersPath() + "oit/color.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
         shaderStages[1] = loadShader(getShadersPath() + "oit/color.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
         rasterizationState.cullMode = VK_CULL_MODE_FRONT_BIT;
         rasterizationState.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
         VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.color));
 
-        // bitonic
-        shaderStages[0] = loadShader(getShadersPath() + "oit/color.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
-        shaderStages[1] = loadShader(getShadersPath() + "oit/bitonic.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
-        VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.bitonic_color));
 
         // kbuf
         shaderStages[0] = loadShader(getShadersPath() + "oit/kbuf_blend.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
@@ -653,7 +646,8 @@ public:
         rasterizationState.cullMode = VK_CULL_MODE_FRONT_BIT;
         rasterizationState.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
-        VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.kbuf_blend));
+        VK_CHECK_RESULT(
+                vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.kbuf_blend));
 
 
     }
@@ -723,16 +717,8 @@ public:
             } else if (uiSettings.oitAlgorithm == 1) {
                 uint32_t data = 0xFFFFFFFF;  // 32-bit value with all bits set to 1
                 vkCmdFillBuffer(drawCmdBuffers[i], geometryPass.abuffer.buffer, 0, geometryPass.abuffer.size, data);
-
-                /*void* abuf_data = malloc(sizeof(Node) * geometrySBO.maxNodeCount);
-                memset(abuf_data, 0xff, sizeof(Node) * geometrySBO.maxNodeCount);
-                VK_CHECK_RESULT(geometryPass.abuffer.map());
-                memcpy(geometryPass.abuffer.mapped, abuf_data, geometryPass.abuffer.size);
-                geometryPass.abuffer.unmap();*/
                 vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.loop64);
             }
-            uint32_t dynamicOffset = 0;
-            //models.sphere.bindBuffers(drawCmdBuffers[i]);
 
             // Render the scene
             ObjectData objectData;
@@ -774,40 +760,25 @@ public:
             vkCmdBeginRenderPass(drawCmdBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
             vkCmdBindDescriptorSets(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayouts.color, 0, 1,
                                     &descriptorSets.color, 0, nullptr);
-            if (uiSettings.oitAlgorithm == 0) {
-                if (uiSettings.optimization == 3) {
-                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.bitonic_color);
+            if (oit_alg[uiSettings.oitAlgorithm] == "linked list") {
+                if (methods[uiSettings.optimization] == "base") {
+                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color);
                     vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-                }
-                else if (uiSettings.optimization == 2) {
-                    if (uiSettings.onlyOpt32) {
+                } else {
+                    if (methods[uiSettings.optimization] == "iRBS") {
+                        vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.bitonic_color);
+                        vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                    } else if (methods[uiSettings.optimization] == "RBS") {
                         vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.rbs_color_128);
                         vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-                        vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.base_color_32);
-                        vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-                    }
-                    else {
-                        vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.rbs_color_128);
-                        vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-                        vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_32);
-                        vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-                        vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_16);
-                        vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-                        vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_8);
-                        vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-                        vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_4);
-                        vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-                    }
-
-                } else if (uiSettings.optimization == 1) {
-                    if (uiSettings.onlyOpt32) {
+                    } else if (methods[uiSettings.optimization] == "BMA") {
                         vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.bma_color_128);
                         vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                    }
+                    if (uiSettings.onlyOpt32) {
                         vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.base_color_32);
                         vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
                     } else {
-                        vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.bma_color_128);
-                        vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
                         vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_32);
                         vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
                         vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_16);
@@ -817,12 +788,8 @@ public:
                         vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color_4);
                         vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
                     }
-
-                } else {
-                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color);
-                    vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
                 }
-            } else if (uiSettings.oitAlgorithm == 1) {
+            } else if (oit_alg[uiSettings.oitAlgorithm] == "atomic loop") {
                 vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.kbuf_blend);
                 vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
             }
@@ -901,7 +868,7 @@ public:
                 buildCommandBuffers();
             }
 
-            if (uiSettings.oitAlgorithm == 0) {
+            if (oit_alg[uiSettings.oitAlgorithm] == "linked list") {
                 if (overlay->comboBox("optimization", &uiSettings.optimization, methods)) {
                     buildCommandBuffers();
                 }
