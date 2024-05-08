@@ -2,7 +2,7 @@
 #extension GL_ARB_gpu_shader_int64 : require
 #extension GL_NV_shader_atomic_int64 : require
 void CAS(inout uint64_t z0, inout uint64_t z1) {
-    if (z0 > z1) {
+    if (z0 < z1) {
         uint64_t temp = z0;
         z0 = z1;
         z1 = temp;
@@ -152,22 +152,4 @@ void rhombus16(inout uint64_t z[32]) {
     CAS(z[22], z[30]);
     CAS(z[7], z[15]);
     CAS(z[23], z[31]);
-}
-
-// Sets color to the result of blending color over baseColor.
-// Color and baseColor are both premultiplied colors.
-void doBlend(inout vec4 color, vec4 baseColor)
-{
-    color.rgb += (1 - color.a) * baseColor.rgb;
-    color.a += (1 - color.a) * baseColor.a;
-}
-
-// Sets color to the result of blending color over fragment.
-// Color and fragment are both premultiplied colors; fragment
-// is an rgba8 sRGB unpremultiplied color packed in a 32-bit uint.
-void doBlendPacked(inout vec4 color, uint fragment)
-{
-    vec4 unpackedColor = unpackUnorm4x8(fragment);
-    unpackedColor.rgb *= unpackedColor.a;
-    doBlend(color, unpackedColor);
 }

@@ -1,6 +1,6 @@
 #version 450
 
-#define MAX_FRAGMENT_COUNT 128
+//#define MAX_FRAGMENT_COUNT 128
 
 struct Node
 {
@@ -32,20 +32,18 @@ void main()
         ++count;
     }
 
-    // Do the insertion sort
-    for (uint j = 1; j < count; ++j)
-    {
-        for (uint i = MAX_FRAGMENT_COUNT - 1; i > 0; --i) {
-            if (i <= j && fragments[i].depth > fragments[i - 1].depth) {
-                Node temp = fragments[i];
-                fragments[i] = fragments[i - 1];
-                fragments[i - 1] = temp;
+    for (int i = (count - 2); i >= 0; --i) {
+        for (int j = 0; j <= i; ++j) {
+            if (fragments[j].depth < fragments[j + 1].depth) {
+                Node temp = fragments[j];
+                fragments[j] = fragments[j + 1];
+                fragments[j + 1] = temp;
             }
         }
     }
 
     // Do blending
-    vec4 color = vec4(0);
+    vec4 color = vec4(1);
     for (int i = 0; i < count; ++i)
     {
         color = mix(color, fragments[i].color, fragments[i].color.a);

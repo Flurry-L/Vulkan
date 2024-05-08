@@ -4,6 +4,7 @@ layout (early_fragment_tests) in;
 layout (location = 0) in vec3 inNormal;
 layout (location = 1) in vec3 inViewVec;
 layout (location = 2) in vec3 inLightVec;
+layout (location = 3) in vec4 inColor;
 
 struct Node
 {
@@ -51,9 +52,10 @@ void main()
         float specular = pow(max(dot(R, V), 0.0), shininess);
         float ambient = 0.2f;
         float cos = max(dot(N, L), 0.0);
-        vec3 finalColor = (ambient + diffuse + specular) * pushConsts.color.xyz;
-        //vec3 finalColor = (ambient + cos) * pushConsts.color.xyz;
-        nodes[nodeIdx].color = vec4(finalColor, pushConsts.color.a);
+        //vec3 finalColor = (ambient + diffuse + specular) * pushConsts.color.xyz;
+        //vec3 finalColor = (ambient + specular + diffuse) * inColor.xyz;
+        vec3 finalColor = (ambient + cos) * inColor.xyz;
+        nodes[nodeIdx].color = vec4(finalColor, 0.5);
         //nodes[nodeIdx].color = vec4(N, 1);
         nodes[nodeIdx].depth = gl_FragCoord.z;
         nodes[nodeIdx].next = prevHeadIdx;

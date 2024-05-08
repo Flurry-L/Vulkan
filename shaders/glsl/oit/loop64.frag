@@ -1,15 +1,16 @@
 #version 460
 #extension GL_ARB_gpu_shader_int64 : require
 #extension GL_NV_shader_atomic_int64 : require
-
+#extension GL_GOOGLE_include_directive : require
 
 #include "shaderCommon.glsl"
-#define OIT_LAYERS 8
+//#define OIT_LAYERS 4
 
 layout (early_fragment_tests) in;
 layout (location = 0) in vec3 inNormal;
 layout (location = 1) in vec3 inViewVec;
 layout (location = 2) in vec3 inLightVec;
+layout (location = 3) in vec4 inColor;
 
 layout (set = 0, binding = 0) uniform RenderPassUBO
 {
@@ -44,18 +45,17 @@ void main()
     float specular = pow(max(dot(R, V), 0.0), shininess);
     float ambient = 0.2f;
     float cos = max(dot(N, L), 0.0);
-    vec4 color = vec4((ambient + diffuse + specular) * pushConsts.color.xyz, pushConsts.color.a);
-    //const vec4 sRGBColor = unPremultLinearToSRGB(color);
-    uint64_t zcur = packUint2x32(uvec2(packUnorm4x8(color), floatBitsToUint(gl_FragCoord.z)));
-    bool evict = true;
+    //vec4 color = vec4((ambient + diffuse + specular) * pushConsts.color.xyz, pushConsts.color.a);
+    //vec4 color = vec4((ambient + diffuse + specular) * inColor.xyz, 0.5);
+    vec4 color = vec4((ambient + cos) * inColor.xyz, 0.5);
+    uint64_t ztest = packUint2x32(uvec2(packUnorm4x8(color), floatBitsToUint(gl_FragCoord.z)));
     for (int i = 0; i < OIT_LAYERS; i++) {
-        uint64_t ztest = atomicMin(kbuf[listPos + i * viewSize], zcur);
-        if(ztest == packUint2x32(uvec2(0xFFFFFFFFu, 0xFFFFFFFFu)))
+        //uint64_t zold = atomicMin(kbuf[listPos + i * viewSize], ztest);
+        uint64_t zold = atomicMin(kbuf[listPos * OIT_LAYERS + i], ztest);
+        if(zold == packUint2x32(uvec2(0xFFFFFFFFu, 0xFFFFFFFFu)))
         {
-            // We just inserted zcur into an empty space in the array
-            evict = false;
             break;
         }
-        zcur = (ztest > zcur) ? ztest : zcur;
+        ztest = (zold > ztest) ? zold : ztest;
     }
 }

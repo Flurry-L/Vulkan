@@ -2,6 +2,7 @@
 
 layout (location = 0) in vec3 inPos;
 layout (location = 1) in vec3 inNormal;
+layout (location = 2) in vec4 inColor;
 
 layout (set = 0, binding = 0) uniform RenderPassUBO
 {
@@ -19,6 +20,7 @@ layout(push_constant) uniform PushConsts {
 layout (location = 0) out vec3 outNormal;
 layout (location = 1) out vec3 outViewVec;
 layout (location = 2) out vec3 outLightVec;
+layout (location = 3) out vec4 outColor;
 
 void main()
 {
@@ -29,4 +31,5 @@ void main()
     vec3 lPos = mat3(pushConsts.model) * renderPassUBO.lightPos.xyz;
     outLightVec = lPos - pos.xyz;
     outViewVec = -pos.xyz;
+    outColor = inColor;
 }

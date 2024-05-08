@@ -258,6 +258,10 @@ namespace vks
 		deviceCreateInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());;
 		deviceCreateInfo.pQueueCreateInfos = queueCreateInfos.data();
 		deviceCreateInfo.pEnabledFeatures = &enabledFeatures;
+        VkPhysicalDeviceVulkan12Features vk12features{};
+        vk12features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+        vk12features.shaderBufferInt64Atomics = VK_TRUE;
+        deviceCreateInfo.pNext = &vk12features;
 		
 		// If a pNext(Chain) has been passed, we need to add it to the device creation info
 		VkPhysicalDeviceFeatures2 physicalDeviceFeatures2{};

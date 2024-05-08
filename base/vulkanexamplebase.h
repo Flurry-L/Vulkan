@@ -184,7 +184,8 @@ public:
 		bool overlay = true;
 	} settings;
 
-	VkClearColorValue defaultClearColor = { { 0.025f, 0.025f, 0.025f, 1.0f } };
+	//VkClearColorValue defaultClearColor = { { 0.025f, 0.025f, 0.025f, 1.0f } };
+    VkClearColorValue defaultClearColor = { { 1.f, 1.f, 1.f, 1.f } };
 
 	static std::vector<const char*> args;
 
@@ -200,7 +201,7 @@ public:
 
 	std::string title = "Vulkan Example";
 	std::string name = "vulkanExample";
-	uint32_t apiVersion = VK_API_VERSION_1_0;
+	uint32_t apiVersion = VK_API_VERSION_1_2;
 
 	struct {
 		VkImage image;

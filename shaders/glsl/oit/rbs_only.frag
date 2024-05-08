@@ -2,6 +2,7 @@
 //#define MAX_FRAGMENT_COUNT 128
 #extension GL_GOOGLE_include_directive : require
 #include "shaderCommon.glsl"
+#include "bubble.glsl"
 
 struct Node
 {
@@ -49,15 +50,16 @@ void main()
             registers[j] = frag[i * 32 + j];
         }
         // sort
-        for (uint j = 0; j < 31; ++j) {
+        /*for (uint j = 0; j < 31; ++j) {
             for (uint k = 31; k > j; --k) {
-                if (registers[k] > registers[k - 1]) {
-                    uint64_t temp = registers[k];
-                    registers[k] = registers[k - 1];
-                    registers[k - 1] = temp;
+                if (frag[i * 32 + k] > frag[i * 32 + k - 1]) {
+                    uint64_t temp = frag[i * 32 + k];
+                    frag[i * 32 + k] = frag[i * 32 + k - 1];
+                    frag[i * 32 + k - 1] = temp;
                 }
             }
-        }
+        }*/
+        bubbleSort(registers);
         // write back
         for (uint j = 0; j < 32; ++j) {
             frag[i * 32 + j] = registers[j];

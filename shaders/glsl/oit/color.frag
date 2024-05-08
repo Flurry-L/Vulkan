@@ -1,6 +1,6 @@
 #version 450
 
-#define MAX_FRAGMENT_COUNT 128
+//#define MAX_FRAGMENT_COUNT 4
 
 struct Node
 {
@@ -24,38 +24,34 @@ void main()
     int count = 0;
 
     uint nodeIdx = imageLoad(headIndexImage, ivec2(gl_FragCoord.xy)).r;
-
+    // load begin
     while (nodeIdx != 0xffffffff && count < MAX_FRAGMENT_COUNT)
     {
         fragments[count] = nodes[nodeIdx];
         nodeIdx = fragments[count].next;
         ++count;
     }
-    
-    // Do the insertion sort
-    for (uint i = 1; i < count; ++i)
-    {
-        Node insert = fragments[i];
-        uint j = i;
-        while (j > 0 && insert.depth > fragments[j - 1].depth)
-        {
-            fragments[j] = fragments[j-1];
-            --j;
+    // load end
+
+    //  sort begin
+    for (int i = (count - 2); i >= 0; --i) {
+        for (int j = 0; j <= i; ++j) {
+            if (fragments[j].depth < fragments[j + 1].depth) {
+                Node temp = fragments[j];
+                fragments[j] = fragments[j + 1];
+                fragments[j + 1] = temp;
+            }
         }
-        fragments[j] = insert;
     }
+    // sort end
 
     // Do blending
-    if (count != 0) {
-        vec4 color = vec4(0);
-        for (int i = 0; i < count; ++i)
-        {
-            color = mix(color, fragments[i].color, fragments[i].color.a);
-        }
-        outFragColor = color;
-    } else {
-        outFragColor = vec4(0.f);
+    vec4 color = vec4(1);
+    for (int i = 0; i < count; ++i)
+    {
+        color = mix(color, fragments[i].color, fragments[i].color.a);
     }
+    outFragColor = color;
 
 
 }

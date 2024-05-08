@@ -14,6 +14,7 @@
 
 class Camera
 {
+
 private:
 	float fov;
 	float znear, zfar;
@@ -64,7 +65,7 @@ public:
 	bool updated = true;
 	bool flipY = false;
 
-	struct
+	struct Matrices
 	{
 		glm::mat4 perspective;
 		glm::mat4 view;

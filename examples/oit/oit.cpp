@@ -18,13 +18,16 @@ struct UISettings {
     int optimization = 0;
     bool animateLight = false;
     bool onlyOpt32 = false;
+    bool unrollBubble = false;
     float lightSpeed = 0.25f;
     float lightTimer = 0.0f;
+    int OIT_LAYERS = 16;
+    int MAX_FRAGMENT_COUNT = 128;
 } uiSettings;
 
 class VulkanExample : public VulkanExampleBase {
 public:
-    std::vector<std::string> methods{"base", "BMA", "RBS", "iRBS"};
+    std::vector<std::string> methods{"base", "BMA", "RBS_BMA", "iRBS_BMA", "RBS_only", "iRBS_only"};
     std::vector<std::string> oit_alg{"linked list", "atomic loop"};
     struct {
         vkglTF::Model sphere;
@@ -86,6 +89,8 @@ public:
         VkPipeline color_4{VK_NULL_HANDLE};
         VkPipeline base_color_32{VK_NULL_HANDLE};
         VkPipeline bitonic_color{VK_NULL_HANDLE};
+        VkPipeline rbs_only{VK_NULL_HANDLE};
+        VkPipeline irbs_only{VK_NULL_HANDLE};
     } pipelines;
 
     struct {
@@ -98,24 +103,85 @@ public:
     VulkanExample() : VulkanExampleBase() {
         title = "Order independent transparency rendering";
         camera.type = Camera::CameraType::lookat;
-        camera.setPosition(glm::vec3(0.0f, 0.0f, -6.0f));
-        camera.setRotation(glm::vec3(0.0f, 0.0f, 0.0f));
+        //camera.setPosition(glm::vec3(0.0f, 0.0f, -6.0f));
+        //camera.setRotation(glm::vec3(0.0f, 0.0f, 0.0f));
+        camera.setPosition(glm::vec3(1.685f, 0.46f, -6.0f));
+        camera.setRotation(glm::vec3(-38.f, -38.f, 0.f));
         camera.setPerspective(60.0f, (float) width / (float) height, 0.1f, 256.0f);
         requiresStencil = true;
 
         // compile shader begin
         std::string shaderPath = getShadersPath();
-        std::vector<std::string> shaders{"color_4.frag", "color_8.frag", "color_16.frag", "color_32.frag",
-                                         "rbs_color_128.frag", "bma_color_128.frag", "color.frag", "color.vert",
-                                         "geometry.frag", "geometry.vert", "loop64.vert", "loop64.frag",
-                                         "kbuf_blend.frag",
-                                         "kbuf_blend.vert", "base_color_32.frag", "bitonic.frag"};
-        for (const auto &shader: shaders) {
-            //auto command = "glslc " + shaderPath + "oit/" + shader + " -o " + shaderPath + "oit/" + shader + ".spv";
-            auto command = "glslc " + shaderPath + "oit/" + shader + " -o " + shaderPath + "oit/" + shader + ".spv -O";
+
+        // compile for vary
+        std::vector<std::string> shaders_vary{"color.frag"};
+        for (const auto &shader: shaders_vary) {
+            auto command =
+                    "glslc -DMAX_FRAGMENT_COUNT=128 " + shaderPath + "oit/" + shader + " -o " + shaderPath + "oit/" +
+                    shader + ".spv -g";
             std::system(command.c_str());
         }
+
+        // compile for OIT_LAYERS
+        std::vector<std::string> shaders_atomic_loop{"loop64.vert", "loop64.frag",
+                                                     "kbuf_blend.frag",
+                                                     "kbuf_blend.vert"};
+        for (const auto &shader: shaders_atomic_loop) {
+            auto command =
+                    "glslc -DOIT_LAYERS=" + std::to_string(uiSettings.OIT_LAYERS) + " " + shaderPath +
+                    "oit/" + shader + " -o " + shaderPath + "oit/" + shader +
+                    ".spv -g";
+            std::system(command.c_str());
+        }
+
+        // compile for constant
+        std::vector<std::string> shaders_constant{"color.vert", "geometry.frag", "geometry.vert"};
+        for (const auto &shader: shaders_constant) {
+            auto command =
+                    "glslc -DMAX_FRAGMENT_COUNT=16 " + shaderPath + "oit/" + shader + " -o " + shaderPath + "oit/" +
+                    shader + ".spv -g";
+            std::system(command.c_str());
+        }
+
+        // compile for 128
+        std::vector<std::string> shaders_128{"rbs_color_128.frag", "bma_color_128.frag", "base_color_32.frag",
+                                             "bitonic.frag", "irbs_only.frag", "rbs_only.frag"};
+        for (const auto &shader: shaders_128) {
+            auto command =
+                    "glslc -DMAX_FRAGMENT_COUNT=128 " + shaderPath + "oit/" + shader + " -o " + shaderPath + "oit/" +
+                    shader + ".spv -g";
+            std::system(command.c_str());
+        }
+
+        // compile for 32
+        std::vector<std::string> shaders_32{"base_color_32.frag"};
+        for (const auto &shader: shaders_32) {
+            auto command =
+                    "glslc -DMAX_FRAGMENT_COUNT=32 " + shaderPath + "oit/" + shader + " -o " + shaderPath + "oit/" +
+                    shader + ".spv -g";
+            std::system(command.c_str());
+        }
+
+
+        // compile for color_x
+/*        for (int i = 4; i <= 32; i = i * 2) {
+            auto command =
+                    "glslc -DMAX_FRAGMENT_COUNT=" + std::to_string(i) + " " + shaderPath + "oit/" + "color_" + std::to_string(i) + ".frag" +
+                    " -o " + shaderPath + "oit/color_" + std::to_string(i) + ".frag.spv -g";
+            std::system(command.c_str());
+        }*/
         // compile shader end
+
+        std::vector<std::string> shader_colors{
+        "color_4.frag", "color_8.frag", "color_16.frag",
+        "color_32.frag"};
+        for (const auto &shader: shader_colors) {
+            auto command =
+                    "glslc " + shaderPath + "oit/" + shader + " -o " + shaderPath + "oit/" +
+                    shader + ".spv -g";
+            std::system(command.c_str());
+        }
+
     }
 
     ~VulkanExample() {
@@ -145,6 +211,7 @@ public:
         // The linked lists are built in a fragment shader using atomic stores, so the sample won't work without that feature available
         if (deviceFeatures.fragmentStoresAndAtomics) {
             enabledFeatures.fragmentStoresAndAtomics = VK_TRUE;
+            enabledFeatures.shaderInt64 = VK_TRUE;
         } else {
             vks::tools::exitFatal("Selected GPU does not support stores and atomic operations in the fragment stage",
                                   VK_ERROR_FEATURE_NOT_PRESENT);
@@ -491,11 +558,13 @@ public:
         pipelineCI.stageCount = static_cast<uint32_t>(shaderStages.size());
         pipelineCI.pStages = shaderStages.data();
         pipelineCI.pVertexInputState = vkglTF::Vertex::getPipelineVertexInputState(
-                {vkglTF::VertexComponent::Position, vkglTF::VertexComponent::Normal});
+                {vkglTF::VertexComponent::Position, vkglTF::VertexComponent::Normal, vkglTF::VertexComponent::Color});
 
         // Create a geometry pipeline
         shaderStages[0] = loadShader(getShadersPath() + "oit/geometry.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
         shaderStages[1] = loadShader(getShadersPath() + "oit/geometry.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+
+        //
 
         depthStencilState.stencilTestEnable = VK_TRUE;
         depthStencilState.back.compareOp = VK_COMPARE_OP_NOT_EQUAL;
@@ -639,6 +708,11 @@ public:
 
         VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.color));
 
+        shaderStages[1] = loadShader(getShadersPath() + "oit/irbs_only.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+        VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.irbs_only));
+        shaderStages[1] = loadShader(getShadersPath() + "oit/rbs_only.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+        VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.rbs_only));
+
 
         // kbuf
         shaderStages[0] = loadShader(getShadersPath() + "oit/kbuf_blend.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
@@ -727,7 +801,7 @@ public:
                                     &descriptorSets.geometry, 0, nullptr);
 
             models.cube.bindBuffers(drawCmdBuffers[i]);
-            objectData.color = glm::vec4(0.7529f, 0.7529f, 0.7529f, 0.5f);
+            objectData.color = glm::vec4(0.8f, 0.8f, 0.8f, 0.5f);
 
             glm::mat4 T = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
             glm::mat4 S = glm::scale(glm::mat4(1.0f), glm::vec3(2.0f));
@@ -764,11 +838,18 @@ public:
                 if (methods[uiSettings.optimization] == "base") {
                     vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.color);
                     vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-                } else {
-                    if (methods[uiSettings.optimization] == "iRBS") {
+                } else if (methods[uiSettings.optimization] == "RBS_only") {
+                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.rbs_only);
+                    vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                } else if (methods[uiSettings.optimization] == "iRBS_only") {
+                    vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.irbs_only);
+                    vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
+                }
+                else {
+                    if (methods[uiSettings.optimization] == "iRBS_BMA") {
                         vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.bitonic_color);
                         vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
-                    } else if (methods[uiSettings.optimization] == "RBS") {
+                    } else if (methods[uiSettings.optimization] == "RBS_BMA") {
                         vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.rbs_color_128);
                         vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
                     } else if (methods[uiSettings.optimization] == "BMA") {
@@ -863,7 +944,8 @@ public:
     }
 
     virtual void OnUpdateUIOverlay(vks::UIOverlay *overlay) {
-        if (overlay->header("Settings")) {
+
+        if (overlay->header("Algorithm Settings")) {
             if (overlay->comboBox("Oit algorithm", &uiSettings.oitAlgorithm, oit_alg)) {
                 buildCommandBuffers();
             }
@@ -872,12 +954,88 @@ public:
                 if (overlay->comboBox("optimization", &uiSettings.optimization, methods)) {
                     buildCommandBuffers();
                 }
+                if (overlay->sliderInt("MAX_FRAGMENT_COUNT", &uiSettings.MAX_FRAGMENT_COUNT, 1, 128) ||
+                    ImGui::InputInt("MAX_FRAGMENT_COUNT", &uiSettings.MAX_FRAGMENT_COUNT)) {
+                    // compile for vary
+                    std::string shaderPath = getShadersPath();
+                    std::vector<std::string> shaders_vary{"color.frag"};
+                    for (const auto &shader: shaders_vary) {
+                        auto command =
+                                "glslc -DMAX_FRAGMENT_COUNT=" + std::to_string(uiSettings.MAX_FRAGMENT_COUNT) + " " +
+                                shaderPath + "oit/" + shader + " -o " + shaderPath + "oit/" +
+                                shader + ".spv -g";
+                        std::system(command.c_str());
+                    }
+
+                    vkDestroyPipeline(device, pipelines.geometry, nullptr);
+                    vkDestroyPipeline(device, pipelines.loop64, nullptr);
+                    vkDestroyPipeline(device, pipelines.kbuf_blend, nullptr);
+                    vkDestroyPipeline(device, pipelines.color, nullptr);
+                    vkDestroyPipeline(device, pipelines.bitonic_color, nullptr);
+                    vkDestroyPipeline(device, pipelines.color_4, nullptr);
+                    vkDestroyPipeline(device, pipelines.color_8, nullptr);
+                    vkDestroyPipeline(device, pipelines.color_16, nullptr);
+                    vkDestroyPipeline(device, pipelines.color_32, nullptr);
+                    vkDestroyPipeline(device, pipelines.rbs_color_128, nullptr);
+                    vkDestroyPipeline(device, pipelines.bma_color_128, nullptr);
+                    vkDestroyPipeline(device, pipelines.base_color_32, nullptr);
+                    vkDestroyPipeline(device, pipelines.irbs_only, nullptr);
+                    vkDestroyPipeline(device, pipelines.rbs_only, nullptr);
+                    preparePipelines();
+
+                }
+
+            } else if (oit_alg[uiSettings.oitAlgorithm] == "atomic loop") {
+                if (overlay->sliderInt("OIT_LAYERS", &uiSettings.OIT_LAYERS, 1, 32) ||
+                    ImGui::InputInt("OIT_LAYERS", &uiSettings.OIT_LAYERS)) {
+                    // compile for OIT_LAYERS
+                    std::string shaderPath = getShadersPath();
+                    std::vector<std::string> shaders_atomic_loop{"loop64.vert", "loop64.frag",
+                                                                 "kbuf_blend.frag",
+                                                                 "kbuf_blend.vert"};
+                    for (const auto &shader: shaders_atomic_loop) {
+                        auto command =
+                                "glslc -DOIT_LAYERS=" + std::to_string(uiSettings.OIT_LAYERS) + " " + shaderPath +
+                                "oit/" + shader + " -o " + shaderPath + "oit/" + shader +
+                                ".spv -g";
+                        std::system(command.c_str());
+                    }
+
+                    vkDestroyPipeline(device, pipelines.geometry, nullptr);
+                    vkDestroyPipeline(device, pipelines.loop64, nullptr);
+                    vkDestroyPipeline(device, pipelines.kbuf_blend, nullptr);
+                    vkDestroyPipeline(device, pipelines.color, nullptr);
+                    vkDestroyPipeline(device, pipelines.bitonic_color, nullptr);
+                    vkDestroyPipeline(device, pipelines.color_4, nullptr);
+                    vkDestroyPipeline(device, pipelines.color_8, nullptr);
+                    vkDestroyPipeline(device, pipelines.color_16, nullptr);
+                    vkDestroyPipeline(device, pipelines.color_32, nullptr);
+                    vkDestroyPipeline(device, pipelines.rbs_color_128, nullptr);
+                    vkDestroyPipeline(device, pipelines.bma_color_128, nullptr);
+                    vkDestroyPipeline(device, pipelines.base_color_32, nullptr);
+                    vkDestroyPipeline(device, pipelines.irbs_only, nullptr);
+                    vkDestroyPipeline(device, pipelines.rbs_only, nullptr);
+
+                    preparePipelines();
+
+                }
             }
             if (overlay->checkBox("Only optimize 32+", &uiSettings.onlyOpt32)) {
                 buildCommandBuffers();
             }
+            if (overlay->checkBox("Unroll Bubble Sort", &uiSettings.unrollBubble));
+        }
+        if (overlay->header("Render Pass Uniform Settings")) {
             overlay->checkBox("Animate light", &uiSettings.animateLight);
-            overlay->sliderFloat("Light speed", &uiSettings.lightSpeed, 0.1f, 1.0f);
+            overlay->inputFloat("Light speed", &uiSettings.lightSpeed, 0.1f, 2);  // 假设步长为0.1，精度为2位小数
+            if (overlay->button("print camera")) {
+                //const Camera::Matrices& m = camera.matrices;
+                std::cout << "position\n";
+                std::cout << camera.position.x << " " << camera.position.y << " " << camera.position.z << "\n";
+                std::cout << "rotation\n";
+                std::cout << camera.rotation.x << " " << camera.rotation.y << " " << camera.rotation.z << "\n";
+                //std::cout << camera.fov << " " << camera.znear << " " << camera.zfar;
+            }
         }
     }
 };
