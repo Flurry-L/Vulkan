@@ -226,7 +226,7 @@ public:
     void loadAssets() {
         const uint32_t glTFLoadingFlags =
                 vkglTF::FileLoadingFlags::PreTransformVertices | vkglTF::FileLoadingFlags::FlipY;
-        models.cube.loadFromFile(getAssetPath() + "models/Unnamed-0000_WORLDCAR_2001_TOPLEVEL_ASM.gltf", vulkanDevice, queue, glTFLoadingFlags);
+        models.cube.loadFromFile(getAssetPath() + "models/car.gltf", vulkanDevice, queue, glTFLoadingFlags);
     }
 
     void prepareUniformBuffers() {

@@ -66,6 +66,11 @@ dlldata.c
 *.svclog
 *.scc
 
+*.spv
+.idea/
+cmake-build-release/
+.clang-tidy
+
 # Chutzpah Test files
 _Chutzpah*
 

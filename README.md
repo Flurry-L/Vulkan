@@ -1,3 +1,15 @@
+# Order Independent Transparency Vulkan Demo
+
+从 [Vulkan Examples](https://github.com/SaschaWillems/Vulkan) 修改而来的 OIT 框架，实现了以下算法的切换以及层数调整：
+
+- Linked List (Real-Time Concurrent Linked List Construction on the GPU)
+    - BMA (Backwards Memory Allocation and Improved OIT)
+    - RBS (Fast sorting for exact OIT of complex scenes)
+    - iRBS (Further improvements to OIT sort performance)
+- Atomic Loop (FreePipe: a programmable parallel rendering architecture for efficient multi-fragment effects)
+
+以下为原仓库 README。
+
 # Vulkan C++ examples and demos
 
 A comprehensive collection of open source C++ examples for [Vulkan®](https://www.khronos.org/vulkan/), the new generation graphics and compute API from Khronos.
