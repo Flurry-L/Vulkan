@@ -1,7 +1,5 @@
 #version 450
 
-//#define MAX_FRAGMENT_COUNT 128
-
 struct Node
 {
     vec4 color;

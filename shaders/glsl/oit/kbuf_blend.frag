@@ -34,4 +34,7 @@ void main()
         }
     }
     outFragColor = color;
+
+    /*uvec2 stored = kbuf[listPos * OIT_LAYERS + 3];
+    outFragColor = unpackUnorm4x8(stored.x);*/
 }

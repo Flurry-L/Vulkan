@@ -45,14 +45,15 @@ void main()
     float specular = pow(max(dot(R, V), 0.0), shininess);
     float ambient = 0.2f;
     float cos = max(dot(N, L), 0.0);
-    //vec4 color = vec4((ambient + diffuse + specular) * pushConsts.color.xyz, pushConsts.color.a);
-    //vec4 color = vec4((ambient + diffuse + specular) * inColor.xyz, 0.5);
+
     vec4 color = vec4((ambient + cos) * inColor.xyz, 0.5);
+    //vec4 color = vec4((ambient + cos) * vec3(255.f/255, 204.f/255, 153.f/255), 0.5);
+
     uint64_t ztest = packUint2x32(uvec2(packUnorm4x8(color), floatBitsToUint(gl_FragCoord.z)));
     for (int i = 0; i < OIT_LAYERS; i++) {
         //uint64_t zold = atomicMin(kbuf[listPos + i * viewSize], ztest);
         uint64_t zold = atomicMin(kbuf[listPos * OIT_LAYERS + i], ztest);
-        if(zold == packUint2x32(uvec2(0xFFFFFFFFu, 0xFFFFFFFFu)))
+        if(zold == packUint2x32(uvec2(0xFFFFFFFFu, 0xFFFFFFFFu)) || zold == ztest)
         {
             break;
         }

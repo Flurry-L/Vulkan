@@ -16,6 +16,7 @@
 #pragma once
 
 #include <stdlib.h>
+//#include "stb_image_write.h"
 #include <string>
 #include <fstream>
 #include <vector>
@@ -32,7 +33,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-#define TINYGLTF_NO_STB_IMAGE_WRITE
+//#define TINYGLTF_NO_STB_IMAGE_WRITE
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
 #define TINYGLTF_ANDROID_LOAD_FROM_ASSETS
 #endif

@@ -6,9 +6,13 @@
 *
 * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
 */
-
 #include "vulkanexamplebase.h"
 #include "VulkanglTFModel.h"
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+//#include "stb_image.h"
+#include "stb_image_write.h"
+
 // #include "tiny_obj_loader.h"
 
 #define NODE_COUNT 20
@@ -23,6 +27,7 @@ struct UISettings {
     float lightTimer = 0.0f;
     int OIT_LAYERS = 16;
     int MAX_FRAGMENT_COUNT = 128;
+    bool exportRequest = false;
 } uiSettings;
 
 class VulkanExample : public VulkanExampleBase {
@@ -221,7 +226,7 @@ public:
     void loadAssets() {
         const uint32_t glTFLoadingFlags =
                 vkglTF::FileLoadingFlags::PreTransformVertices | vkglTF::FileLoadingFlags::FlipY;
-        models.cube.loadFromFile(getAssetPath() + "models/car.gltf", vulkanDevice, queue, glTFLoadingFlags);
+        models.cube.loadFromFile(getAssetPath() + "models/Unnamed-0000_WORLDCAR_2001_TOPLEVEL_ASM.gltf", vulkanDevice, queue, glTFLoadingFlags);
     }
 
     void prepareUniformBuffers() {
@@ -874,7 +879,11 @@ public:
                 vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.kbuf_blend);
                 vkCmdDraw(drawCmdBuffers[i], 3, 1, 0, 0);
             }
-            drawUI(drawCmdBuffers[i]);
+
+            if (!uiSettings.exportRequest) {
+                drawUI(drawCmdBuffers[i]);
+            }
+
             vkCmdEndRenderPass(drawCmdBuffers[i]);
 
             VK_CHECK_RESULT(vkEndCommandBuffer(drawCmdBuffers[i]));
@@ -916,6 +925,12 @@ public:
         submitInfo.commandBufferCount = 1;
         submitInfo.pCommandBuffers = &drawCmdBuffers[currentBuffer];
         VK_CHECK_RESULT(vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE));
+
+        if (uiSettings.exportRequest) {
+            exportImage();
+            uiSettings.exportRequest = false;
+            UIOverlay.updated = true;
+        }
         VulkanExampleBase::submitFrame();
     }
 
@@ -943,6 +958,128 @@ public:
         geometryPass.abuffer.destroy();
     }
 
+    void rePreparePipeline() {
+        vkDestroyPipeline(device, pipelines.geometry, nullptr);
+        vkDestroyPipeline(device, pipelines.loop64, nullptr);
+        vkDestroyPipeline(device, pipelines.kbuf_blend, nullptr);
+        vkDestroyPipeline(device, pipelines.color, nullptr);
+        vkDestroyPipeline(device, pipelines.bitonic_color, nullptr);
+        vkDestroyPipeline(device, pipelines.color_4, nullptr);
+        vkDestroyPipeline(device, pipelines.color_8, nullptr);
+        vkDestroyPipeline(device, pipelines.color_16, nullptr);
+        vkDestroyPipeline(device, pipelines.color_32, nullptr);
+        vkDestroyPipeline(device, pipelines.rbs_color_128, nullptr);
+        vkDestroyPipeline(device, pipelines.bma_color_128, nullptr);
+        vkDestroyPipeline(device, pipelines.base_color_32, nullptr);
+        vkDestroyPipeline(device, pipelines.irbs_only, nullptr);
+        vkDestroyPipeline(device, pipelines.rbs_only, nullptr);
+        preparePipelines();
+    }
+
+    void exportImage() {
+        // 获取当前帧缓冲的图像
+        VkImage srcImage = swapChain.buffers[currentBuffer].image;
+
+        // 创建临时的 VkImage 和 VkDeviceMemory
+        VkImageCreateInfo imageInfo = {};
+        imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        imageInfo.imageType = VK_IMAGE_TYPE_2D;
+        imageInfo.format = swapChain.colorFormat;
+        imageInfo.extent.width = width;
+        imageInfo.extent.height = height;
+        imageInfo.extent.depth = 1;
+        imageInfo.mipLevels = 1;
+        imageInfo.arrayLayers = 1;
+        imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        imageInfo.tiling = VK_IMAGE_TILING_LINEAR;
+        imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+        VkImage dstImage;
+        vkCreateImage(device, &imageInfo, nullptr, &dstImage);
+
+        VkMemoryRequirements memRequirements;
+        vkGetImageMemoryRequirements(device, dstImage, &memRequirements);
+
+        VkMemoryAllocateInfo allocInfo = {};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memRequirements.size;
+        allocInfo.memoryTypeIndex = vulkanDevice->getMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+        VkDeviceMemory dstImageMemory;
+        vkAllocateMemory(device, &allocInfo, nullptr, &dstImageMemory);
+        vkBindImageMemory(device, dstImage, dstImageMemory, 0);
+
+        // 将当前帧缓冲的图像复制到临时图像中
+        VkCommandBuffer commandBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+
+        VkImageMemoryBarrier barrier = {};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = dstImage;
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrier.subresourceRange.baseMipLevel = 0;
+        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.baseArrayLayer = 0;
+        barrier.subresourceRange.layerCount = 1;
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+        vkCmdPipelineBarrier(
+                commandBuffer,
+                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                0,
+                0, nullptr,
+                0, nullptr,
+                1, &barrier
+        );
+
+        VkImageCopy imageCopyRegion = {};
+        imageCopyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        imageCopyRegion.srcSubresource.layerCount = 1;
+        imageCopyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        imageCopyRegion.dstSubresource.layerCount = 1;
+        imageCopyRegion.extent.width = width;
+        imageCopyRegion.extent.height = height;
+        imageCopyRegion.extent.depth = 1;
+
+        vkCmdCopyImage(
+                commandBuffer,
+                srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                1, &imageCopyRegion
+        );
+
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+
+        vkCmdPipelineBarrier(
+                commandBuffer,
+                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+                0,
+                0, nullptr,
+                0, nullptr,
+                1, &barrier
+        );
+
+        vulkanDevice->flushCommandBuffer(commandBuffer, queue, true);
+
+        // 将图像数据映射到主机内存并保存到文件
+        void* data;
+        vkMapMemory(device, dstImageMemory, 0, VK_WHOLE_SIZE, 0, &data);
+        stbi_write_png("exported_image.png", width, height, 4, data, 0);
+        vkUnmapMemory(device, dstImageMemory);
+
+        // 清理资源
+        vkDestroyImage(device, dstImage, nullptr);
+        vkFreeMemory(device, dstImageMemory, nullptr);
+    }
+
     virtual void OnUpdateUIOverlay(vks::UIOverlay *overlay) {
 
         if (overlay->header("Algorithm Settings")) {
@@ -956,7 +1093,7 @@ public:
                 }
                 if (overlay->sliderInt("MAX_FRAGMENT_COUNT", &uiSettings.MAX_FRAGMENT_COUNT, 1, 128) ||
                     ImGui::InputInt("MAX_FRAGMENT_COUNT", &uiSettings.MAX_FRAGMENT_COUNT)) {
-                    // compile for vary
+                    // compile
                     std::string shaderPath = getShadersPath();
                     std::vector<std::string> shaders_vary{"color.frag"};
                     for (const auto &shader: shaders_vary) {
@@ -967,22 +1104,27 @@ public:
                         std::system(command.c_str());
                     }
 
-                    vkDestroyPipeline(device, pipelines.geometry, nullptr);
-                    vkDestroyPipeline(device, pipelines.loop64, nullptr);
-                    vkDestroyPipeline(device, pipelines.kbuf_blend, nullptr);
-                    vkDestroyPipeline(device, pipelines.color, nullptr);
-                    vkDestroyPipeline(device, pipelines.bitonic_color, nullptr);
-                    vkDestroyPipeline(device, pipelines.color_4, nullptr);
-                    vkDestroyPipeline(device, pipelines.color_8, nullptr);
-                    vkDestroyPipeline(device, pipelines.color_16, nullptr);
-                    vkDestroyPipeline(device, pipelines.color_32, nullptr);
-                    vkDestroyPipeline(device, pipelines.rbs_color_128, nullptr);
-                    vkDestroyPipeline(device, pipelines.bma_color_128, nullptr);
-                    vkDestroyPipeline(device, pipelines.base_color_32, nullptr);
-                    vkDestroyPipeline(device, pipelines.irbs_only, nullptr);
-                    vkDestroyPipeline(device, pipelines.rbs_only, nullptr);
-                    preparePipelines();
+                    rePreparePipeline();
 
+                }
+
+                if (overlay->checkBox("Only optimize 32+", &uiSettings.onlyOpt32)) {
+                    buildCommandBuffers();
+                }
+                if (overlay->checkBox("Unroll Bubble Sort", &uiSettings.unrollBubble)) {
+                    std::string shaderPath = getShadersPath();
+                    std::vector<std::string> shaders_bubble{"rbs_only.frag", "rbs_color_128.frag"};
+
+                    for (const auto &shader: shaders_bubble) {
+                        auto command =
+                                "glslc -DMAX_FRAGMENT_COUNT=" + std::to_string(uiSettings.MAX_FRAGMENT_COUNT) + " -Dunroll=" + std::to_string(uiSettings.unrollBubble) + " " +
+                                shaderPath + "oit/" + shader + " -o " + shaderPath + "oit/" +
+                                shader + ".spv -g";
+                        std::system(command.c_str());
+                    }
+
+
+                    rePreparePipeline();
                 }
 
             } else if (oit_alg[uiSettings.oitAlgorithm] == "atomic loop") {
@@ -1001,29 +1143,11 @@ public:
                         std::system(command.c_str());
                     }
 
-                    vkDestroyPipeline(device, pipelines.geometry, nullptr);
-                    vkDestroyPipeline(device, pipelines.loop64, nullptr);
-                    vkDestroyPipeline(device, pipelines.kbuf_blend, nullptr);
-                    vkDestroyPipeline(device, pipelines.color, nullptr);
-                    vkDestroyPipeline(device, pipelines.bitonic_color, nullptr);
-                    vkDestroyPipeline(device, pipelines.color_4, nullptr);
-                    vkDestroyPipeline(device, pipelines.color_8, nullptr);
-                    vkDestroyPipeline(device, pipelines.color_16, nullptr);
-                    vkDestroyPipeline(device, pipelines.color_32, nullptr);
-                    vkDestroyPipeline(device, pipelines.rbs_color_128, nullptr);
-                    vkDestroyPipeline(device, pipelines.bma_color_128, nullptr);
-                    vkDestroyPipeline(device, pipelines.base_color_32, nullptr);
-                    vkDestroyPipeline(device, pipelines.irbs_only, nullptr);
-                    vkDestroyPipeline(device, pipelines.rbs_only, nullptr);
-
-                    preparePipelines();
+                    rePreparePipeline();
 
                 }
             }
-            if (overlay->checkBox("Only optimize 32+", &uiSettings.onlyOpt32)) {
-                buildCommandBuffers();
-            }
-            if (overlay->checkBox("Unroll Bubble Sort", &uiSettings.unrollBubble));
+
         }
         if (overlay->header("Render Pass Uniform Settings")) {
             overlay->checkBox("Animate light", &uiSettings.animateLight);
@@ -1036,7 +1160,20 @@ public:
                 std::cout << camera.rotation.x << " " << camera.rotation.y << " " << camera.rotation.z << "\n";
                 //std::cout << camera.fov << " " << camera.znear << " " << camera.zfar;
             }
+
+            if (overlay->button("export picture")) {
+                //exportImage();
+                uiSettings.exportRequest = true;
+            }
         }
+    }
+
+    void keyPressed(uint32_t keycode) override {
+        if (keycode == KEY_SPACE) {
+            UIOverlay.visible = !UIOverlay.visible;
+            UIOverlay.updated = true;
+        }
+        VulkanExampleBase::keyPressed(keycode);
     }
 };
 

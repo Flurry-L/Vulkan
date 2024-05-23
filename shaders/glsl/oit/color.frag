@@ -53,5 +53,4 @@ void main()
     }
     outFragColor = color;
 
-
 }
